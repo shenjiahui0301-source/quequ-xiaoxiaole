@@ -112,6 +112,8 @@ export class DuiDuiMahjongGame extends Component {
     private bgmClipLoaded = false;
     private clickSource: AudioSource | null = null;
     private clickClip: AudioClip | null = null;
+    private removeSource: AudioSource | null = null;
+    private removeClip: AudioClip | null = null;
 
     private state: GameState = 'home';
     private mode = 1;
@@ -163,6 +165,7 @@ export class DuiDuiMahjongGame extends Component {
         this.showHome();
         this.loadBackgroundMusic();
         this.loadClickSound();
+        this.loadRemoveSound();
     }
 
     onDestroy() {
@@ -282,6 +285,31 @@ export class DuiDuiMahjongGame extends Component {
         }
 
         this.clickSource.playOneShot(this.clickClip, 0.72);
+    }
+
+    private loadRemoveSound() {
+        if (!this.removeSource) {
+            const node = makeNode('RemoveAudio', this.node, 0, 0, 1, 1);
+            this.removeSource = node.addComponent(AudioSource);
+            this.removeSource.loop = false;
+            this.removeSource.volume = 0.86;
+        }
+
+        resources.load('duidui/explode', AudioClip, (err, clip) => {
+            if (err || !clip || !this.removeSource) {
+                return;
+            }
+            this.removeClip = clip;
+            this.removeSource.clip = clip;
+        });
+    }
+
+    private playRemoveSound() {
+        if (!this.settings.sound || !this.removeSource || !this.removeClip) {
+            return;
+        }
+
+        this.removeSource.playOneShot(this.removeClip, 0.86);
     }
 
     private applyBackgroundSprite() {
@@ -1025,6 +1053,7 @@ export class DuiDuiMahjongGame extends Component {
         this.grid[first.row][first.col] = null;
         this.grid[second.row][second.col] = null;
         this.tiles = this.tiles.filter((tile) => tile !== first && tile !== second);
+        this.playRemoveSound();
         this.animateRemovePair(first, second);
         this.selectedTile = null;
         this.dragSnapshot = null;
