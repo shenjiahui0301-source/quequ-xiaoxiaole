@@ -6,6 +6,7 @@ import {
     Component,
     EventTouch,
     Graphics,
+    input,
     Input,
     Label,
     LabelOutline,
@@ -110,6 +111,8 @@ export class DuiDuiMahjongGame extends Component {
     private readonly artSprites: Partial<Record<keyof typeof DuiDuiMahjongTheme.artPaths, SpriteFrame>> = {};
     private bgmSource: AudioSource | null = null;
     private bgmClipLoaded = false;
+    private audioUnlockRegistered = false;
+    private audioUserGestureReceived = false;
     private clickSource: AudioSource | null = null;
     private clickClip: AudioClip | null = null;
     private removeSource: AudioSource | null = null;
@@ -149,7 +152,7 @@ export class DuiDuiMahjongGame extends Component {
     };
 
     onLoad() {
-        view.setDesignResolutionSize(this.designW, this.designH, ResolutionPolicy.SHOW_ALL);
+        this.applyDesignResolutionPolicy();
         this.node.layer = Layers.Enum.UI_2D;
 
         const transform = this.node.getComponent(UITransform) || this.node.addComponent(UITransform);
@@ -159,16 +162,26 @@ export class DuiDuiMahjongGame extends Component {
         this.loadSettings();
     }
 
+    private applyDesignResolutionPolicy() {
+        const frameSize = view.getFrameSize();
+        const designAspect = this.designW / this.designH;
+        const frameAspect = frameSize.height > 0 ? frameSize.width / frameSize.height : designAspect;
+        const policy = frameAspect <= designAspect ? ResolutionPolicy.FIXED_WIDTH : ResolutionPolicy.FIXED_HEIGHT;
+        view.setDesignResolutionSize(this.designW, this.designH, policy);
+    }
+
     start() {
         this.loadArtSprites();
         this.buildShell();
         this.showHome();
+        this.registerBackgroundMusicUnlock();
         this.loadBackgroundMusic();
         this.loadClickSound();
         this.loadRemoveSound();
     }
 
     onDestroy() {
+        this.unregisterBackgroundMusicUnlock();
         this.stopBackgroundMusic();
     }
 
@@ -200,6 +213,7 @@ export class DuiDuiMahjongGame extends Component {
         this.root = makeNode('DuiDuiRoot', this.node, 0, 0, this.designW, this.designH);
         this.drawBackground();
         this.settingsLayer = makeNode('SettingsLayer', this.root, 0, 0, this.designW, this.designH);
+        this.applySettingsLayerFrame();
         this.settingsLayer.active = false;
         this.toastNode = makeNode('Toast', this.root, 0, -430, 560, 64);
         this.toastNode.active = false;
@@ -241,13 +255,39 @@ export class DuiDuiMahjongGame extends Component {
         });
     }
 
+    private registerBackgroundMusicUnlock() {
+        if (this.audioUnlockRegistered) {
+            return;
+        }
+
+        this.audioUnlockRegistered = true;
+        input.on(Input.EventType.TOUCH_START, this.handleAudioUnlockGesture, this);
+        input.on(Input.EventType.MOUSE_DOWN, this.handleAudioUnlockGesture, this);
+    }
+
+    private unregisterBackgroundMusicUnlock() {
+        if (!this.audioUnlockRegistered) {
+            return;
+        }
+
+        input.off(Input.EventType.TOUCH_START, this.handleAudioUnlockGesture, this);
+        input.off(Input.EventType.MOUSE_DOWN, this.handleAudioUnlockGesture, this);
+        this.audioUnlockRegistered = false;
+    }
+
+    private handleAudioUnlockGesture() {
+        this.audioUserGestureReceived = true;
+        this.unregisterBackgroundMusicUnlock();
+        this.syncBackgroundMusic();
+    }
+
     private syncBackgroundMusic() {
         if (!this.bgmSource || !this.bgmClipLoaded) {
             return;
         }
 
         if (this.settings.music) {
-            if (!this.bgmSource.playing) {
+            if (!this.bgmSource.playing && (!sys.isBrowser || this.audioUserGestureReceived)) {
                 this.bgmSource.play();
             }
             return;
@@ -1300,12 +1340,15 @@ export class DuiDuiMahjongGame extends Component {
         }
 
         this.settingsOpen = true;
+        this.applyDesignResolutionPolicy();
         this.settingsLayer.active = true;
         this.settingsLayer.setSiblingIndex(9999);
+        this.applySettingsLayerFrame();
         destroyChildren(this.settingsLayer);
 
-        const blocker = makeNode('SettingsBlocker', this.settingsLayer, 0, 0, this.designW, this.designH);
-        drawRoundRect(blocker, this.designW, this.designH, color(25, 36, 38, 154), color(0, 0, 0, 0), 0, 0);
+        const overlay = this.getAdaptiveOverlaySize();
+        const blocker = makeNode('SettingsBlocker', this.settingsLayer, 0, 0, overlay.width, overlay.height);
+        drawRoundRect(blocker, overlay.width, overlay.height, color(25, 36, 38, 154), color(0, 0, 0, 0), 0, 0);
         const blockerOpacity = blocker.addComponent(UIOpacity);
         blockerOpacity.opacity = 0;
         this.bindPress(blocker, () => this.hideSettings());
@@ -1359,6 +1402,24 @@ export class DuiDuiMahjongGame extends Component {
             .to(0.12, { scale: new Vec3(1.06, 1.06, 1) })
             .to(0.08, { scale: new Vec3(1, 1, 1) })
             .start();
+    }
+
+    private getAdaptiveOverlaySize() {
+        const visibleSize = view.getVisibleSize();
+        return {
+            width: visibleSize.width,
+            height: visibleSize.height,
+        };
+    }
+
+    private applySettingsLayerFrame() {
+        if (!this.settingsLayer) {
+            return;
+        }
+
+        const overlay = this.getAdaptiveOverlaySize();
+        const transform = this.settingsLayer.getComponent(UITransform) || this.settingsLayer.addComponent(UITransform);
+        transform.setContentSize(overlay.width, overlay.height);
     }
 
     private makeSettingSwitch(parent: Node, title: string, y: number, enabled: boolean, callback: () => void) {
@@ -1892,6 +1953,7 @@ export class DuiDuiMahjongGame extends Component {
     }
 
     private playTapFeedback() {
+        this.audioUserGestureReceived = true;
         this.syncBackgroundMusic();
         this.playClickSound();
 

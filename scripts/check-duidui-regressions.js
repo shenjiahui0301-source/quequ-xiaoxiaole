@@ -42,13 +42,17 @@ function assert(condition, message) {
 const touchStart = methodBody('onTileTouchStart');
 const touchEnd = methodBody('onTileTouchEnd');
 const onLoad = methodBody('onLoad');
+const applyDesignResolutionPolicy = methodBody('applyDesignResolutionPolicy');
 assert(
-  /ResolutionPolicy\.SHOW_ALL/.test(onLoad),
-  'The game must use SHOW_ALL so narrow portrait screens do not crop the 720-wide UI.',
+  /this\.applyDesignResolutionPolicy\s*\(\)/.test(onLoad),
+  'onLoad() should apply the adaptive resolution policy before building UI nodes.',
 );
 assert(
-  !/ResolutionPolicy\.FIXED_HEIGHT/.test(onLoad),
-  'FIXED_HEIGHT crops the game horizontally on tall/narrow phones.',
+  /view\.getFrameSize\s*\(\)/.test(applyDesignResolutionPolicy) &&
+    /frameAspect\s*<=\s*designAspect/.test(applyDesignResolutionPolicy) &&
+    /ResolutionPolicy\.FIXED_WIDTH/.test(applyDesignResolutionPolicy) &&
+    /ResolutionPolicy\.FIXED_HEIGHT/.test(applyDesignResolutionPolicy),
+  'Resolution policy should expand the shorter screen axis so fullscreen overlays have no SHOW_ALL letterbox gaps.',
 );
 
 assert(
@@ -281,6 +285,31 @@ assert(
   'showUsePropPrompt() must find the shuffle button inside the prop dock, not only direct children of gameRoot.',
 );
 
+const getAdaptiveOverlaySize = methodBody('getAdaptiveOverlaySize');
+assert(
+  /view\.getVisibleSize\s*\(\)/.test(getAdaptiveOverlaySize) &&
+    /width:\s*visibleSize\.width/.test(getAdaptiveOverlaySize) &&
+    /height:\s*visibleSize\.height/.test(getAdaptiveOverlaySize),
+  'Fullscreen modal overlays should use the expanded visible design size after adaptive resolution policy is applied.',
+);
+
+const applySettingsLayerFrame = methodBody('applySettingsLayerFrame');
+assert(
+  /getAdaptiveOverlaySize\s*\(\)/.test(applySettingsLayerFrame) &&
+    /transform\.setContentSize\s*\(\s*overlay\.width\s*,\s*overlay\.height\s*\)/.test(applySettingsLayerFrame),
+  'SettingsLayer should resize to the adaptive overlay frame before showing the settings modal.',
+);
+
+const showSettings = methodBody('showSettings');
+assert(
+  /applyDesignResolutionPolicy\s*\(\)/.test(showSettings) &&
+    /applySettingsLayerFrame\s*\(\)/.test(showSettings) &&
+    /const\s+overlay\s*=\s*this\.getAdaptiveOverlaySize\s*\(\)/.test(showSettings) &&
+    /makeNode\('SettingsBlocker',\s*this\.settingsLayer,\s*0,\s*0,\s*overlay\.width,\s*overlay\.height\)/.test(showSettings) &&
+    /drawRoundRect\(blocker,\s*overlay\.width,\s*overlay\.height/.test(showSettings),
+  'Settings blocker should cover the adaptive overlay size instead of the fixed design resolution.',
+);
+
 const makeControlButton = methodBody('makeControlButton');
 assert(
   /findNodeDeep\(this\.gameRoot,\s*'PropDock'\)/.test(makeControlButton),
@@ -289,6 +318,25 @@ assert(
 assert(
   /requiresAd/.test(makeControlButton) && /AD/.test(makeControlButton),
   'makeControlButton() should render an AD badge on ad-gated prop buttons.',
+);
+
+const registerBackgroundMusicUnlock = methodBody('registerBackgroundMusicUnlock');
+const handleAudioUnlockGesture = methodBody('handleAudioUnlockGesture');
+const syncBackgroundMusic = methodBody('syncBackgroundMusic');
+assert(
+  /input\.on\(Input\.EventType\.TOUCH_START,\s*this\.handleAudioUnlockGesture,\s*this\)/.test(registerBackgroundMusicUnlock) &&
+    /input\.on\(Input\.EventType\.MOUSE_DOWN,\s*this\.handleAudioUnlockGesture,\s*this\)/.test(registerBackgroundMusicUnlock),
+  'Browser BGM should register global first-touch/mouse gestures instead of relying only on bound button clicks.',
+);
+assert(
+  /this\.audioUserGestureReceived\s*=\s*true/.test(handleAudioUnlockGesture) &&
+    /this\.unregisterBackgroundMusicUnlock\s*\(\)/.test(handleAudioUnlockGesture) &&
+    /this\.syncBackgroundMusic\s*\(\)/.test(handleAudioUnlockGesture),
+  'The first global user gesture should be remembered, unregister unlock listeners, and retry BGM immediately.',
+);
+assert(
+  /!sys\.isBrowser\s*\|\|\s*this\.audioUserGestureReceived/.test(syncBackgroundMusic),
+  'Web BGM playback should wait for a user gesture while non-browser builds may still autoplay.',
 );
 
 const useShuffleProp = methodBody('useShuffleProp');
