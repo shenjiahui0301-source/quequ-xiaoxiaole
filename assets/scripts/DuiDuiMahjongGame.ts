@@ -512,13 +512,12 @@ export class DuiDuiMahjongGame extends Component {
 
         const top = makeNode('TopHud', this.gameRoot, 0, 520, 650, 152);
         drawRoundRect(top, 650, 152, color(255, 253, 233, 232), color(255, 194, 76), 5, 34);
-        const titleBadge = makeNode('TopTitleBadge', top, -218, 24, 178, 82);
-        drawRoundRect(titleBadge, 178, 82, color(255, 236, 108), color(213, 86, 61), 4, 28);
-        addLabel(titleBadge, '雀趣', 31, color(190, 54, 48), 0, 12, 154, 40, true);
-        addLabel(titleBadge, MODE_NAMES[this.mode], 18, color(61, 113, 91), 0, -21, 140, 28, true);
-        this.levelLabel = this.makeStatPill(top, 'TopStat_Level', '关卡', -42, 24, 142, color(46, 151, 116));
-        this.timeLabel = this.makeStatPill(top, 'TopStat_Time', '时间', 116, 24, 142, color(211, 72, 76));
-        this.remainLabel = this.makeStatPill(top, 'TopStat_Remain', '剩余', 274, 24, 142, color(69, 108, 190));
+        const titleBadge = makeNode('TopTitleBadge', top, 0, 40, 430, 56);
+        drawRoundRect(titleBadge, 430, 56, color(70, 177, 143, 224), color(255, 255, 255, 140), 3, 22);
+        addLabel(titleBadge, modeTitle(this.mode), 28, color(255, 255, 255), 0, 0, 380, 42, true);
+        this.levelLabel = this.makeStatPill(top, 'TopStat_Level', '关卡', -204, -30, 168, color(46, 151, 116));
+        this.timeLabel = this.makeStatPill(top, 'TopStat_Time', '时间', 0, -30, 168, color(211, 72, 76));
+        this.remainLabel = this.makeStatPill(top, 'TopStat_Remain', '剩余', 204, -30, 168, color(69, 108, 190));
 
         const playFrame = makeNode('PlayFrame', this.gameRoot, 0, -2, 670, 802);
         drawRoundRect(playFrame, 670, 802, color(255, 250, 225, 220), color(93, 179, 143), 5, 36);
@@ -550,9 +549,9 @@ export class DuiDuiMahjongGame extends Component {
 
     private makeStatPill(parent: Node, name: string, title: string, x: number, y: number, w: number, accent: Color): Label {
         const pill = makeNode(name, parent, x, y, w, 72);
-        drawRoundRect(pill, w, 72, color(255, 255, 255, 238), accent, 3, 24);
-        addLabel(pill, title, 16, color(104, 108, 96), 0, 18, w - 18, 24, false);
-        return addLabel(pill, '', 25, accent, 0, -12, w - 18, 38, true);
+        drawRoundRect(pill, w, 72, color(255, 255, 255, 238), accent, 3, 22);
+        addLabel(pill, title, 15, color(104, 108, 96), 0, 18, w - 16, 22, false);
+        return addLabel(pill, '', 23, accent, 0, -12, w - 16, 36, true);
     }
 
     private makeControlButton(name: string, text: string, x: number, y: number, fill: Color, callback: () => void, icon = '', requiresAd = false) {
@@ -2080,6 +2079,16 @@ function directionLabel(dir: Direction): string {
         return '向上';
     }
     return '向下';
+}
+
+function modeTitle(mode: number): string {
+    if (mode === 0) {
+        return '新手教学';
+    }
+    if (mode === 2) {
+        return '地狱模式';
+    }
+    return '挑战模式';
 }
 
 function shuffle<T>(items: T[]) {
