@@ -1,5 +1,7 @@
 import {
     _decorator,
+    AudioClip,
+    AudioSource,
     Color,
     Component,
     EventTouch,
@@ -106,6 +108,8 @@ export class DuiDuiMahjongGame extends Component {
     private readonly adService = new DuiDuiAdService();
     private readonly boardModel = new DuiDuiMahjongModel<TileData>();
     private readonly artSprites: Partial<Record<keyof typeof DuiDuiMahjongTheme.artPaths, SpriteFrame>> = {};
+    private bgmSource: AudioSource | null = null;
+    private bgmClipLoaded = false;
 
     private state: GameState = 'home';
     private mode = 1;
@@ -155,6 +159,11 @@ export class DuiDuiMahjongGame extends Component {
         this.loadArtSprites();
         this.buildShell();
         this.showHome();
+        this.loadBackgroundMusic();
+    }
+
+    onDestroy() {
+        this.stopBackgroundMusic();
     }
 
     update(dt: number) {
@@ -206,6 +215,45 @@ export class DuiDuiMahjongGame extends Component {
                 }
             });
         });
+    }
+
+    private loadBackgroundMusic() {
+        if (!this.bgmSource) {
+            this.bgmSource = this.node.getComponent(AudioSource) || this.node.addComponent(AudioSource);
+            this.bgmSource.loop = true;
+            this.bgmSource.volume = 0.42;
+        }
+
+        resources.load('duidui/bgm', AudioClip, (err, clip) => {
+            if (err || !clip || !this.bgmSource) {
+                return;
+            }
+
+            this.bgmSource.clip = clip;
+            this.bgmClipLoaded = true;
+            this.syncBackgroundMusic();
+        });
+    }
+
+    private syncBackgroundMusic() {
+        if (!this.bgmSource || !this.bgmClipLoaded) {
+            return;
+        }
+
+        if (this.settings.music) {
+            if (!this.bgmSource.playing) {
+                this.bgmSource.play();
+            }
+            return;
+        }
+
+        this.stopBackgroundMusic();
+    }
+
+    private stopBackgroundMusic() {
+        if (this.bgmSource && this.bgmSource.playing) {
+            this.bgmSource.stop();
+        }
     }
 
     private applyBackgroundSprite() {
@@ -1222,6 +1270,7 @@ export class DuiDuiMahjongGame extends Component {
         this.makeSettingSwitch(panel, '背景音乐', 114, this.settings.music, () => {
             this.settings.music = !this.settings.music;
             this.saveSettings();
+            this.syncBackgroundMusic();
             this.refreshSettingsRows(panel);
         });
         this.makeSettingSwitch(panel, '音效反馈', 12, this.settings.sound, () => {
@@ -1293,6 +1342,7 @@ export class DuiDuiMahjongGame extends Component {
     private toggleSetting(title: string, panel: Node) {
         if (title === '背景音乐') {
             this.settings.music = !this.settings.music;
+            this.syncBackgroundMusic();
         } else if (title === '音效反馈') {
             this.settings.sound = !this.settings.sound;
         } else if (title === '震动提示') {
@@ -1784,6 +1834,8 @@ export class DuiDuiMahjongGame extends Component {
     }
 
     private playTapFeedback() {
+        this.syncBackgroundMusic();
+
         if (!this.settings.sound && !this.settings.vibration) {
             return;
         }
