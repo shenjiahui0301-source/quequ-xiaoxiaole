@@ -4,6 +4,7 @@ import {
     AudioSource,
     Color,
     Component,
+    EventMouse,
     EventTouch,
     Graphics,
     input,
@@ -1407,7 +1408,7 @@ export class DuiDuiMahjongGame extends Component {
         drawRoundRect(blocker, overlay.width, overlay.height, color(25, 36, 38, 154), color(0, 0, 0, 0), 0, 0);
         const blockerOpacity = blocker.addComponent(UIOpacity);
         blockerOpacity.opacity = 0;
-        this.bindPress(blocker, () => this.hideSettings());
+        this.blockSettingsBackdropInput(blocker);
 
         const panel = makeNode('SettingsPanel', this.settingsLayer, 0, 24, 600, 560);
         panel.setScale(0.78, 0.78, 1);
@@ -1476,6 +1477,26 @@ export class DuiDuiMahjongGame extends Component {
         const overlay = this.getAdaptiveOverlaySize();
         const transform = this.settingsLayer.getComponent(UITransform) || this.settingsLayer.addComponent(UITransform);
         transform.setContentSize(overlay.width, overlay.height);
+    }
+
+    private blockSettingsBackdropInput(blocker: Node) {
+        blocker.on(Input.EventType.TOUCH_START, this.stopSettingsBackdropEvent, this);
+        blocker.on(Input.EventType.TOUCH_MOVE, this.stopSettingsBackdropEvent, this);
+        blocker.on(Input.EventType.TOUCH_END, this.stopSettingsBackdropEvent, this);
+        blocker.on(Input.EventType.TOUCH_CANCEL, this.stopSettingsBackdropEvent, this);
+        blocker.on(Input.EventType.MOUSE_DOWN, this.stopSettingsBackdropEvent, this);
+        blocker.on(Input.EventType.MOUSE_UP, this.stopSettingsBackdropEvent, this);
+    }
+
+    private stopSettingsBackdropEvent(event?: EventTouch | EventMouse) {
+        if (!event) {
+            return;
+        }
+
+        event.preventSwallow = false;
+        if (typeof event.stopPropagation === 'function') {
+            event.stopPropagation();
+        }
     }
 
     private makeSettingSwitch(parent: Node, title: string, y: number, enabled: boolean, callback: () => void) {

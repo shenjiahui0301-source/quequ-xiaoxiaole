@@ -343,6 +343,8 @@ assert(
 );
 
 const showSettings = methodBody('showSettings');
+const blockSettingsBackdropInput = methodBody('blockSettingsBackdropInput');
+const stopSettingsBackdropEvent = methodBody('stopSettingsBackdropEvent');
 assert(
   /applyDesignResolutionPolicy\s*\(\)/.test(showSettings) &&
     /applySettingsLayerFrame\s*\(\)/.test(showSettings) &&
@@ -350,6 +352,26 @@ assert(
     /makeNode\('SettingsBlocker',\s*this\.settingsLayer,\s*0,\s*0,\s*overlay\.width,\s*overlay\.height\)/.test(showSettings) &&
     /drawRoundRect\(blocker,\s*overlay\.width,\s*overlay\.height/.test(showSettings),
   'Settings blocker should cover the adaptive overlay size instead of the fixed design resolution.',
+);
+assert(
+  /blockSettingsBackdropInput\s*\(\s*blocker\s*\)/.test(showSettings) &&
+    !/bindPress\s*\(\s*blocker/.test(showSettings),
+  'Settings backdrop should consume input without acting as a close button.',
+);
+assert(
+  /TOUCH_START/.test(blockSettingsBackdropInput) &&
+    /TOUCH_MOVE/.test(blockSettingsBackdropInput) &&
+    /TOUCH_END/.test(blockSettingsBackdropInput) &&
+    /TOUCH_CANCEL/.test(blockSettingsBackdropInput) &&
+    /MOUSE_DOWN/.test(blockSettingsBackdropInput) &&
+    /MOUSE_UP/.test(blockSettingsBackdropInput),
+  'Settings backdrop should listen for touch and mouse events so clicks cannot pass through.',
+);
+assert(
+  /preventSwallow\s*=\s*false/.test(stopSettingsBackdropEvent) &&
+    /typeof\s+event\.stopPropagation\s*===\s*'function'/.test(stopSettingsBackdropEvent) &&
+    /stopPropagation\s*\(\)/.test(stopSettingsBackdropEvent),
+  'Settings backdrop input handler should swallow the event and guard stopPropagation before calling it.',
 );
 
 const makeControlButton = methodBody('makeControlButton');
