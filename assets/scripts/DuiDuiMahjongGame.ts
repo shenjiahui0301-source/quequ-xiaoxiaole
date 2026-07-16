@@ -32,7 +32,7 @@ import { DuiDuiMahjongTheme } from './view/DuiDuiMahjongTheme';
 const { ccclass } = _decorator;
 
 type Direction = DuiDirection;
-type GameState = 'home' | 'playing' | 'choosing' | 'success' | 'failed';
+type GameState = 'loading' | 'home' | 'playing' | 'choosing' | 'success' | 'failed';
 
 interface GameSettings {
     music: boolean;
@@ -93,6 +93,8 @@ export class DuiDuiMahjongGame extends Component {
 
     private root: Node | null = null;
     private backgroundNode: Node | null = null;
+    private loadingRoot: Node | null = null;
+    private loadingProgressFill: Node | null = null;
     private homeRoot: Node | null = null;
     private gameRoot: Node | null = null;
     private boardPanel: Node | null = null;
@@ -109,6 +111,8 @@ export class DuiDuiMahjongGame extends Component {
     private readonly adService = new DuiDuiAdService();
     private readonly boardModel = new DuiDuiMahjongModel<TileData>();
     private readonly artSprites: Partial<Record<keyof typeof DuiDuiMahjongTheme.artPaths, SpriteFrame>> = {};
+    private readonly loadingDuration = 2;
+    private loadingElapsed = 0;
     private bgmSource: AudioSource | null = null;
     private bgmClipLoaded = false;
     private audioUnlockRegistered = false;
@@ -173,7 +177,7 @@ export class DuiDuiMahjongGame extends Component {
     start() {
         this.loadArtSprites();
         this.buildShell();
-        this.showHome();
+        this.showLoading();
         this.registerBackgroundMusicUnlock();
         this.loadBackgroundMusic();
         this.loadClickSound();
@@ -186,6 +190,11 @@ export class DuiDuiMahjongGame extends Component {
     }
 
     update(dt: number) {
+        if (this.state === 'loading') {
+            this.updateLoading(dt);
+            return;
+        }
+
         if (this.state !== 'playing' || this.level.time <= 0) {
             return;
         }
@@ -390,17 +399,51 @@ export class DuiDuiMahjongGame extends Component {
         this.applyBackgroundSprite();
     }
 
-    private showHome() {
+    private showLoading() {
         this.clearGameNodes();
-        this.state = 'home';
+        this.state = 'loading';
+        this.loadingElapsed = 0;
 
         if (!this.root) {
             return;
         }
 
-        this.homeRoot = makeNode('Home', this.root, 0, 0, this.designW, this.designH);
+        this.loadingRoot = makeNode('LoadingRoot', this.root, 0, 0, this.designW, this.designH);
+        this.createHomeLogo(this.loadingRoot, 176);
 
-        const hero = makeNode('HomeHero', this.homeRoot, 0, 348, 650, 292);
+        const track = makeNode('LoadingProgressTrack', this.loadingRoot, 0, -268, 468, 34);
+        drawRoundRect(track, 468, 34, color(255, 255, 247, 210), color(58, 177, 140, 210), 4, 17);
+        this.loadingProgressFill = makeNode('LoadingProgressFill', track, -217, 0, 34, 24);
+        drawRoundRect(this.loadingProgressFill, 34, 24, color(58, 177, 140, 235), color(255, 255, 255, 88), 1, 12);
+        addLabel(this.loadingRoot, '加载中', 24, color(43, 139, 104), 0, -214, 220, 38, true);
+        this.updateLoadingProgressBar(0);
+        this.playScreenEnter(this.loadingRoot);
+    }
+
+    private updateLoading(dt: number) {
+        this.loadingElapsed += dt;
+        const progress = Math.min(1, this.loadingElapsed / this.loadingDuration);
+        this.updateLoadingProgressBar(progress);
+        if (progress >= 1) {
+            this.showHome();
+        }
+    }
+
+    private updateLoadingProgressBar(progress: number) {
+        if (!this.loadingProgressFill) {
+            return;
+        }
+
+        const barW = 468;
+        const barH = 24;
+        const fillW = Math.max(barH, barW * progress);
+        this.loadingProgressFill.setPosition(-barW / 2 + fillW / 2, 0, 0);
+        setSize(this.loadingProgressFill, fillW, barH);
+        drawRoundRect(this.loadingProgressFill, fillW, barH, color(58, 177, 140, 235), color(255, 255, 255, 88), 1, barH / 2);
+    }
+
+    private createHomeLogo(parent: Node, y: number) {
+        const hero = makeNode('HomeHero', parent, 0, y, 650, 292);
         drawRoundRect(hero, 650, 292, color(255, 252, 229, 228), color(255, 196, 82), 5, 36);
         const heroGlow = makeNode('HomeHeroGlow', hero, 0, -78, 560, 70);
         drawRoundRect(heroGlow, 560, 70, color(255, 217, 92, 92), color(255, 255, 255, 0), 0, 34);
@@ -413,6 +456,19 @@ export class DuiDuiMahjongGame extends Component {
             tile.angle = [-8, -3, 4, -4, 7][i];
             this.drawSampleTile(tile, i + 13, i);
         }
+    }
+
+    private showHome() {
+        this.clearGameNodes();
+        this.state = 'home';
+
+        if (!this.root) {
+            return;
+        }
+
+        this.homeRoot = makeNode('Home', this.root, 0, 0, this.designW, this.designH);
+
+        this.createHomeLogo(this.homeRoot, 348);
 
         const progress = makeNode('HomeProgress', this.homeRoot, 0, 156, 552, 76);
         drawRoundRect(progress, 552, 76, color(58, 177, 140, 220), color(255, 255, 255, 165), 3, 28);
@@ -1970,6 +2026,11 @@ export class DuiDuiMahjongGame extends Component {
     }
 
     private clearGameNodes() {
+        if (this.loadingRoot) {
+            this.loadingRoot.destroy();
+            this.loadingRoot = null;
+        }
+        this.loadingProgressFill = null;
         if (this.homeRoot) {
             this.homeRoot.destroy();
             this.homeRoot = null;

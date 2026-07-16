@@ -266,12 +266,54 @@ assert(
 
 const showHome = methodBody('showHome');
 assert(
-  /HomeHero/.test(showHome) && /HomeModeCard/.test(showHome) && /HomeStart/.test(showHome),
+  /createHomeLogo\s*\(/.test(showHome) && /HomeModeCard/.test(showHome) && /HomeStart/.test(showHome),
   'Home screen should use a complete casual-game entrance layout instead of flat stacked debug buttons.',
 );
 assert(
   !/TitleBack/.test(showHome),
   'Home screen should not use the old plain title-back panel layout.',
+);
+
+const startMethod = methodBody('start');
+const showLoading = methodBody('showLoading');
+const updateLoading = methodBody('updateLoading');
+const updateLoadingProgressBar = methodBody('updateLoadingProgressBar');
+const createHomeLogo = methodBody('createHomeLogo');
+assert(
+  /showLoading\s*\(\)/.test(startMethod) && !/showHome\s*\(\)/.test(startMethod),
+  'Game startup should show the loading scene before entering the home screen.',
+);
+assert(
+  /LoadingRoot/.test(showLoading) &&
+    /createHomeLogo\s*\(/.test(showLoading) &&
+    /LoadingProgressTrack/.test(showLoading) &&
+    /LoadingProgressFill/.test(showLoading) &&
+    /drawRoundRect\(track,\s*468,\s*34,\s*color\(255,\s*255,\s*247,\s*210\),\s*color\(58,\s*177,\s*140,\s*210\),\s*4,\s*17\)/.test(showLoading),
+  'Loading scene should reuse the home logo and show a cyan rounded progress bar with a thicker outlined track.',
+);
+assert(
+  /private readonly loadingDuration\s*=\s*2/.test(source) &&
+    /this\.loadingElapsed\s*\+=\s*dt/.test(updateLoading) &&
+    /this\.loadingDuration/.test(updateLoading) &&
+    /this\.showHome\s*\(\)/.test(updateLoading),
+  'Loading progress should run for a brisk virtual 2 seconds before entering home.',
+);
+assert(
+  /Math\.max\s*\(\s*barH\s*,\s*barW\s*\*\s*progress\s*\)/.test(updateLoadingProgressBar) &&
+    /drawRoundRect\s*\(\s*this\.loadingProgressFill,\s*fillW,\s*barH/.test(updateLoadingProgressBar),
+  'Loading progress fill should keep round ends while expanding from left to right.',
+);
+assert(
+  /HomeHero/.test(createHomeLogo) &&
+    /GAME_TITLE/.test(createHomeLogo) &&
+    /GAME_SUBTITLE/.test(createHomeLogo) &&
+    /MahjongStand/.test(createHomeLogo) &&
+    /drawSampleTile/.test(createHomeLogo),
+  'Home and loading screens should share the same logo composition.',
+);
+assert(
+  /this\.createHomeLogo\s*\(\s*this\.homeRoot/.test(showHome) && !/const\s+hero\s*=\s*makeNode\('HomeHero'/.test(showHome),
+  'Home screen should reuse createHomeLogo() so the loading logo stays visually consistent.',
 );
 
 assert(
