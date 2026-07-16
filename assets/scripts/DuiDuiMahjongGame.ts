@@ -703,6 +703,7 @@ export class DuiDuiMahjongGame extends Component {
             return;
         }
 
+        this.playTapFeedback();
         this.clearChoiceLayer();
         this.hideHint();
         this.activeTile = tile;
