@@ -110,6 +110,8 @@ export class DuiDuiMahjongGame extends Component {
     private readonly artSprites: Partial<Record<keyof typeof DuiDuiMahjongTheme.artPaths, SpriteFrame>> = {};
     private bgmSource: AudioSource | null = null;
     private bgmClipLoaded = false;
+    private clickSource: AudioSource | null = null;
+    private clickClip: AudioClip | null = null;
 
     private state: GameState = 'home';
     private mode = 1;
@@ -160,6 +162,7 @@ export class DuiDuiMahjongGame extends Component {
         this.buildShell();
         this.showHome();
         this.loadBackgroundMusic();
+        this.loadClickSound();
     }
 
     onDestroy() {
@@ -254,6 +257,31 @@ export class DuiDuiMahjongGame extends Component {
         if (this.bgmSource && this.bgmSource.playing) {
             this.bgmSource.stop();
         }
+    }
+
+    private loadClickSound() {
+        if (!this.clickSource) {
+            const node = makeNode('ClickAudio', this.node, 0, 0, 1, 1);
+            this.clickSource = node.addComponent(AudioSource);
+            this.clickSource.loop = false;
+            this.clickSource.volume = 0.72;
+        }
+
+        resources.load('duidui/click', AudioClip, (err, clip) => {
+            if (err || !clip || !this.clickSource) {
+                return;
+            }
+            this.clickClip = clip;
+            this.clickSource.clip = clip;
+        });
+    }
+
+    private playClickSound() {
+        if (!this.settings.sound || !this.clickSource || !this.clickClip) {
+            return;
+        }
+
+        this.clickSource.playOneShot(this.clickClip, 0.72);
     }
 
     private applyBackgroundSprite() {
@@ -952,6 +980,7 @@ export class DuiDuiMahjongGame extends Component {
                 if (this.state !== 'choosing' || this.choosingTile !== tile) {
                     return;
                 }
+                this.playTapFeedback();
                 this.pushUndoIfNeeded();
                 this.clearChoiceLayer();
                 this.removePair(tile, candidate);
@@ -1835,6 +1864,7 @@ export class DuiDuiMahjongGame extends Component {
 
     private playTapFeedback() {
         this.syncBackgroundMusic();
+        this.playClickSound();
 
         if (!this.settings.sound && !this.settings.vibration) {
             return;
