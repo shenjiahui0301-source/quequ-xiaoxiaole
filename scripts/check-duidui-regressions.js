@@ -408,16 +408,16 @@ const useHintProp = methodBody('useHintProp');
 const undo = methodBody('undo');
 const transitionToHome = methodBody('transitionToHome');
 assert(
-  /runRewardedProp\s*\(/.test(useHintProp) && /showHint\s*\(\s*false\s*\)/.test(useHintProp),
-  'Manual hint prop should require a rewarded ad before showing a hint.',
+  /showRewardedConfirm\s*\(\s*'hint'/.test(useHintProp) && /showHint\s*\(\s*false\s*\)/.test(useHintProp),
+  'Manual hint prop should show a rewarded-ad confirmation before showing a hint.',
 );
 assert(
-  /state === 'choosing'/.test(useShuffleProp) && /clearChoiceLayer\s*\(/.test(useShuffleProp) && /state !== 'playing'/.test(useShuffleProp) && /runRewardedProp\s*\(/.test(useShuffleProp),
-  'useShuffleProp() should clear choice mode, guard against non-playing states, and require a rewarded ad.',
+  /state === 'choosing'/.test(useShuffleProp) && /clearChoiceLayer\s*\(/.test(useShuffleProp) && /state !== 'playing'/.test(useShuffleProp) && /showRewardedConfirm\s*\(\s*'shuffle'/.test(useShuffleProp),
+  'useShuffleProp() should clear choice mode, guard against non-playing states, and require rewarded-ad confirmation.',
 );
 assert(
-  /state !== 'playing'/.test(undo) && /undoStack\.length === 0/.test(undo) && /runRewardedProp\s*\(/.test(undo),
-  'undo() should not run while another skill/mode is active, when no snapshot exists, or before rewarded ad completion.',
+  /state !== 'playing'/.test(undo) && /undoStack\.length === 0/.test(undo) && /showRewardedConfirm\s*\(\s*'undo'/.test(undo),
+  'undo() should not run while another skill/mode is active, when no snapshot exists, or before rewarded-ad confirmation.',
 );
 assert(
   /state === 'choosing'/.test(transitionToHome) && /clearChoiceLayer\s*\(/.test(transitionToHome) && /playScreenExit\s*\(/.test(transitionToHome),
@@ -482,6 +482,46 @@ const closeResultModal = methodBody('closeResultModal');
 assert(
   /UIOpacity/.test(closeResultModal) && /opacity:\s*0/.test(closeResultModal) && /scale:\s*new Vec3\(0\.82/.test(closeResultModal),
   'closeResultModal() should fade and shrink the result panel before running the next action.',
+);
+
+const rewardedConfirmHintProp = methodBody('useHintProp');
+const rewardedConfirmShuffleProp = methodBody('useShuffleProp');
+const rewardedConfirmUndo = methodBody('undo');
+assert(
+  /showRewardedConfirm\s*\(\s*'hint'/.test(rewardedConfirmHintProp) &&
+    /showRewardedConfirm\s*\(\s*'shuffle'/.test(rewardedConfirmShuffleProp) &&
+    /showRewardedConfirm\s*\(\s*'undo'/.test(rewardedConfirmUndo),
+  'Hint, shuffle, and undo buttons should show a rewarded-ad confirmation modal before requesting ads.',
+);
+
+const showRewardedConfirm = methodBody('showRewardedConfirm');
+assert(
+  /RewardedConfirmBlocker/.test(showRewardedConfirm) &&
+    /getAdaptiveOverlaySize\s*\(\)/.test(showRewardedConfirm) &&
+    /blockModalBackdropInput\s*\(\s*blocker\s*\)/.test(showRewardedConfirm),
+  'Rewarded confirmation modal should use an adaptive non-button blocker that swallows input without click-through.',
+);
+assert(
+  /RewardedConfirmClose/.test(showRewardedConfirm) &&
+    /hideRewardedConfirm\s*\(\s*\)/.test(showRewardedConfirm) &&
+    /RewardedConfirmButton/.test(showRewardedConfirm) &&
+    /runRewardedProp\s*\(/.test(showRewardedConfirm),
+  'Rewarded confirmation modal should have a close button and only start the ad flow from the confirm button.',
+);
+assert(
+  !/bindPress\s*\(\s*blocker/.test(showRewardedConfirm),
+  'Rewarded confirmation blocker must not be a button or close the modal when tapped.',
+);
+
+const blockModalBackdropInput = methodBody('blockModalBackdropInput');
+assert(
+  /TOUCH_START/.test(blockModalBackdropInput) &&
+    /TOUCH_MOVE/.test(blockModalBackdropInput) &&
+    /TOUCH_END/.test(blockModalBackdropInput) &&
+    /TOUCH_CANCEL/.test(blockModalBackdropInput) &&
+    /MOUSE_DOWN/.test(blockModalBackdropInput) &&
+    /MOUSE_UP/.test(blockModalBackdropInput),
+  'Generic modal blockers should swallow touch and mouse events so taps cannot pass through.',
 );
 
 const playScreenEnter = methodBody('playScreenEnter');

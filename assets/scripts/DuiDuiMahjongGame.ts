@@ -34,6 +34,7 @@ const { ccclass } = _decorator;
 
 type Direction = DuiDirection;
 type GameState = 'loading' | 'home' | 'playing' | 'choosing' | 'success' | 'failed';
+type RewardedPropKind = 'hint' | 'shuffle' | 'undo';
 
 interface GameSettings {
     music: boolean;
@@ -149,6 +150,7 @@ export class DuiDuiMahjongGame extends Component {
     private screenTransitioning = false;
     private adRequesting = false;
     private settingsOpen = false;
+    private rewardedConfirmOpen = false;
     private settings: GameSettings = {
         music: true,
         sound: true,
@@ -1615,6 +1617,145 @@ export class DuiDuiMahjongGame extends Component {
             .start();
     }
 
+    private applyModalLayerFrame() {
+        if (!this.modalLayer) {
+            return;
+        }
+
+        const overlay = this.getAdaptiveOverlaySize();
+        const transform = this.modalLayer.getComponent(UITransform) || this.modalLayer.addComponent(UITransform);
+        transform.setContentSize(overlay.width, overlay.height);
+    }
+
+    private showRewardedConfirm(kind: RewardedPropKind, name: string, description: string, granted: () => void) {
+        if (!this.modalLayer || this.rewardedConfirmOpen || this.adRequesting) {
+            return;
+        }
+
+        this.rewardedConfirmOpen = true;
+        this.applyDesignResolutionPolicy();
+        this.applyModalLayerFrame();
+        this.modalLayer.active = true;
+        this.modalLayer.setSiblingIndex(9999);
+        destroyChildren(this.modalLayer);
+
+        const overlay = this.getAdaptiveOverlaySize();
+        const blocker = makeNode('RewardedConfirmBlocker', this.modalLayer, 0, 0, overlay.width, overlay.height);
+        drawRoundRect(blocker, overlay.width, overlay.height, color(25, 36, 38, 154), color(0, 0, 0, 0), 0, 0);
+        const blockerOpacity = blocker.addComponent(UIOpacity);
+        blockerOpacity.opacity = 0;
+        this.blockModalBackdropInput(blocker);
+
+        const panel = makeNode(`RewardedConfirmPanel_${kind}`, this.modalLayer, 0, 24, 580, 410);
+        panel.setScale(0.8, 0.8, 1);
+        const panelOpacity = panel.addComponent(UIOpacity);
+        panelOpacity.opacity = 0;
+        drawRoundRect(panel, 580, 410, color(255, 252, 232), color(62, 159, 127), 5, 34);
+
+        const titleBadge = makeNode('RewardedConfirmTitleBadge', panel, 0, 150, 240, 70);
+        drawRoundRect(titleBadge, 240, 70, color(255, 218, 80), color(255, 255, 255, 168), 4, 26);
+        addLabel(titleBadge, '观看广告', 34, color(64, 116, 91), 0, 2, 210, 54, true);
+
+        const close = makeNode('RewardedConfirmClose', panel, 232, 152, 62, 62);
+        drawRoundRect(close, 62, 62, color(224, 86, 74), color(255, 255, 255, 150), 3, 22);
+        addLabel(close, '×', 36, color(255, 255, 255), 0, 1, 48, 48, true);
+        this.bindPress(close, () => this.hideRewardedConfirm());
+
+        const descBox = makeNode('RewardedConfirmDescription', panel, 0, 28, 476, 132);
+        drawRoundRect(descBox, 476, 132, color(255, 255, 247, 232), color(66, 164, 124), 3, 26);
+        addLabel(descBox, description, 25, color(82, 90, 78), 0, 0, 430, 100, true);
+
+        const confirm = makeNode('RewardedConfirmButton', panel, 0, -136, 320, 78);
+        drawRoundRect(confirm, 320, 78, color(58, 169, 129), color(255, 255, 255, 168), 4, 28);
+        addLabel(confirm, `观看广告使用${name}`, 28, color(255, 255, 255), 0, 0, 280, 52, true);
+        let confirming = false;
+        this.bindPress(confirm, () => {
+            if (confirming) {
+                return;
+            }
+            confirming = true;
+            this.hideRewardedConfirm(() => this.runRewardedProp(name, granted));
+        });
+
+        tween(blockerOpacity)
+            .to(0.12, { opacity: 255 })
+            .start();
+        tween(panelOpacity)
+            .delay(0.04)
+            .to(0.1, { opacity: 255 })
+            .start();
+        tween(panel)
+            .delay(0.04)
+            .to(0.12, { scale: new Vec3(1.06, 1.06, 1) })
+            .to(0.08, { scale: new Vec3(1, 1, 1) })
+            .start();
+    }
+
+    private hideRewardedConfirm(done?: () => void) {
+        if (!this.modalLayer || !this.rewardedConfirmOpen) {
+            if (done) {
+                done();
+            }
+            return;
+        }
+
+        const layer = this.modalLayer;
+        const panel = findNodeDeep(layer, 'RewardedConfirmPanel_hint') ||
+            findNodeDeep(layer, 'RewardedConfirmPanel_shuffle') ||
+            findNodeDeep(layer, 'RewardedConfirmPanel_undo');
+        const blocker = findNodeDeep(layer, 'RewardedConfirmBlocker');
+        const panelOpacity = panel ? panel.getComponent(UIOpacity) : null;
+        const blockerOpacity = blocker ? blocker.getComponent(UIOpacity) : null;
+
+        const finish = () => {
+            destroyChildren(layer);
+            layer.active = false;
+            this.rewardedConfirmOpen = false;
+            if (done) {
+                done();
+            }
+        };
+
+        if (!panel || !panelOpacity || !blockerOpacity) {
+            finish();
+            return;
+        }
+
+        Tween.stopAllByTarget(panel);
+        Tween.stopAllByTarget(panelOpacity);
+        Tween.stopAllByTarget(blockerOpacity);
+        tween(blockerOpacity)
+            .to(0.1, { opacity: 0 })
+            .start();
+        tween(panelOpacity)
+            .to(0.08, { opacity: 0 })
+            .start();
+        tween(panel)
+            .to(0.1, { scale: new Vec3(0.82, 0.82, 1) })
+            .call(finish)
+            .start();
+    }
+
+    private blockModalBackdropInput(blocker: Node) {
+        blocker.on(Input.EventType.TOUCH_START, this.stopModalBackdropEvent, this);
+        blocker.on(Input.EventType.TOUCH_MOVE, this.stopModalBackdropEvent, this);
+        blocker.on(Input.EventType.TOUCH_END, this.stopModalBackdropEvent, this);
+        blocker.on(Input.EventType.TOUCH_CANCEL, this.stopModalBackdropEvent, this);
+        blocker.on(Input.EventType.MOUSE_DOWN, this.stopModalBackdropEvent, this);
+        blocker.on(Input.EventType.MOUSE_UP, this.stopModalBackdropEvent, this);
+    }
+
+    private stopModalBackdropEvent(event?: EventTouch | EventMouse) {
+        if (!event) {
+            return;
+        }
+
+        event.preventSwallow = false;
+        if (typeof event.stopPropagation === 'function') {
+            event.stopPropagation();
+        }
+    }
+
     private restartCurrent() {
         if (this.state === 'choosing') {
             this.clearChoiceLayer();
@@ -1627,7 +1768,7 @@ export class DuiDuiMahjongGame extends Component {
             return;
         }
 
-        this.runRewardedProp('提示', () => {
+        this.showRewardedConfirm('hint', '提示', '观看广告后获得一次提示，帮你找到可消除的牌。', () => {
             this.showHint(false);
         });
     }
@@ -1638,7 +1779,7 @@ export class DuiDuiMahjongGame extends Component {
             return;
         }
 
-        this.runRewardedProp('撤回', () => {
+        this.showRewardedConfirm('undo', '撤回', '观看广告后撤回上一步操作。', () => {
             const snapshot = this.undoStack.pop();
             if (snapshot) {
                 this.restoreSnapshot(snapshot, true);
@@ -1659,7 +1800,7 @@ export class DuiDuiMahjongGame extends Component {
             return;
         }
 
-        this.runRewardedProp('洗牌', () => {
+        this.showRewardedConfirm('shuffle', '洗牌', '观看广告后重新洗牌，帮助继续当前牌局。', () => {
             this.hideHint();
             this.shuffleBoard(true);
             this.showToast('已使用洗牌道具');
