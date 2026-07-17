@@ -7,7 +7,6 @@ import {
     EventMouse,
     EventTouch,
     Graphics,
-    input,
     Input,
     Label,
     LabelOutline,
@@ -117,8 +116,6 @@ export class DuiDuiMahjongGame extends Component {
     private loadingElapsed = 0;
     private bgmSource: AudioSource | null = null;
     private bgmClipLoaded = false;
-    private audioUnlockRegistered = false;
-    private audioUserGestureReceived = false;
     private clickSource: AudioSource | null = null;
     private clickClip: AudioClip | null = null;
     private removeSource: AudioSource | null = null;
@@ -181,14 +178,12 @@ export class DuiDuiMahjongGame extends Component {
         this.loadArtSprites();
         this.buildShell();
         this.showLoading();
-        this.registerBackgroundMusicUnlock();
         this.loadBackgroundMusic();
         this.loadClickSound();
         this.loadRemoveSound();
     }
 
     onDestroy() {
-        this.unregisterBackgroundMusicUnlock();
         this.stopBackgroundMusic();
     }
 
@@ -263,43 +258,19 @@ export class DuiDuiMahjongGame extends Component {
 
             this.bgmSource.clip = clip;
             this.bgmClipLoaded = true;
-            this.syncBackgroundMusic();
         });
-    }
-
-    private registerBackgroundMusicUnlock() {
-        if (this.audioUnlockRegistered) {
-            return;
-        }
-
-        this.audioUnlockRegistered = true;
-        input.on(Input.EventType.TOUCH_START, this.handleAudioUnlockGesture, this);
-        input.on(Input.EventType.MOUSE_DOWN, this.handleAudioUnlockGesture, this);
-    }
-
-    private unregisterBackgroundMusicUnlock() {
-        if (!this.audioUnlockRegistered) {
-            return;
-        }
-
-        input.off(Input.EventType.TOUCH_START, this.handleAudioUnlockGesture, this);
-        input.off(Input.EventType.MOUSE_DOWN, this.handleAudioUnlockGesture, this);
-        this.audioUnlockRegistered = false;
-    }
-
-    private handleAudioUnlockGesture() {
-        this.audioUserGestureReceived = true;
-        this.unregisterBackgroundMusicUnlock();
-        this.syncBackgroundMusic();
     }
 
     private syncBackgroundMusic() {
         if (!this.bgmSource || !this.bgmClipLoaded) {
             return;
         }
+        if (this.state === 'loading') {
+            return;
+        }
 
         if (this.settings.music) {
-            if (!this.bgmSource.playing && (!sys.isBrowser || this.audioUserGestureReceived)) {
+            if (!this.bgmSource.playing) {
                 this.bgmSource.play();
             }
             return;
@@ -492,6 +463,7 @@ export class DuiDuiMahjongGame extends Component {
         addLabel(start, '>', 50, color(118, 63, 32), 158, 2, 60, 70, true);
         this.bindPress(start, () => this.transitionToLevel(1));
         this.playScreenEnter(this.homeRoot);
+        this.syncBackgroundMusic();
     }
 
     private makeHomeButton(name: string, text: string, desc: string, x: number, y: number, fill: Color, callback: () => void, icon: string) {
@@ -1491,13 +1463,18 @@ export class DuiDuiMahjongGame extends Component {
     }
 
     private stopSettingsBackdropEvent(event?: EventTouch | EventMouse) {
+        this.swallowModalEvent(event);
+    }
+
+    private swallowModalEvent(event?: EventTouch | EventMouse) {
         if (!event) {
             return;
         }
 
-        event.preventSwallow = false;
-        if (typeof event.stopPropagation === 'function') {
-            event.stopPropagation();
+        const blockingEvent = event as (EventTouch | EventMouse) & { stopPropagation?: () => void };
+        blockingEvent.preventSwallow = false;
+        if (typeof blockingEvent.stopPropagation === 'function') {
+            blockingEvent.stopPropagation();
         }
     }
 
@@ -1746,14 +1723,7 @@ export class DuiDuiMahjongGame extends Component {
     }
 
     private stopModalBackdropEvent(event?: EventTouch | EventMouse) {
-        if (!event) {
-            return;
-        }
-
-        event.preventSwallow = false;
-        if (typeof event.stopPropagation === 'function') {
-            event.stopPropagation();
-        }
+        this.swallowModalEvent(event);
     }
 
     private restartCurrent() {
@@ -2171,8 +2141,6 @@ export class DuiDuiMahjongGame extends Component {
     }
 
     private playTapFeedback() {
-        this.audioUserGestureReceived = true;
-        this.syncBackgroundMusic();
         this.playClickSound();
 
         if (!this.settings.sound && !this.settings.vibration) {

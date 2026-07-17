@@ -345,6 +345,7 @@ assert(
 const showSettings = methodBody('showSettings');
 const blockSettingsBackdropInput = methodBody('blockSettingsBackdropInput');
 const stopSettingsBackdropEvent = methodBody('stopSettingsBackdropEvent');
+const swallowModalEvent = methodBody('swallowModalEvent');
 assert(
   /applyDesignResolutionPolicy\s*\(\)/.test(showSettings) &&
     /applySettingsLayerFrame\s*\(\)/.test(showSettings) &&
@@ -368,10 +369,12 @@ assert(
   'Settings backdrop should listen for touch and mouse events so clicks cannot pass through.',
 );
 assert(
-  /preventSwallow\s*=\s*false/.test(stopSettingsBackdropEvent) &&
-    /typeof\s+event\.stopPropagation\s*===\s*'function'/.test(stopSettingsBackdropEvent) &&
-    /stopPropagation\s*\(\)/.test(stopSettingsBackdropEvent),
-  'Settings backdrop input handler should swallow the event and guard stopPropagation before calling it.',
+  /swallowModalEvent\s*\(\s*event\s*\)/.test(stopSettingsBackdropEvent) &&
+    /preventSwallow\s*=\s*false/.test(swallowModalEvent) &&
+    /stopPropagation\?:\s*\(\)\s*=>\s*void/.test(swallowModalEvent) &&
+    /typeof\s+blockingEvent\.stopPropagation\s*===\s*'function'/.test(swallowModalEvent) &&
+    /blockingEvent\.stopPropagation\s*\(\)/.test(swallowModalEvent),
+  'Settings backdrop input handler should use a typed modal event helper to swallow events and guard stopPropagation.',
 );
 
 const makeControlButton = methodBody('makeControlButton');
@@ -384,23 +387,32 @@ assert(
   'makeControlButton() should render an AD badge on ad-gated prop buttons.',
 );
 
-const registerBackgroundMusicUnlock = methodBody('registerBackgroundMusicUnlock');
-const handleAudioUnlockGesture = methodBody('handleAudioUnlockGesture');
 const syncBackgroundMusic = methodBody('syncBackgroundMusic');
+const loadBackgroundMusic = methodBody('loadBackgroundMusic');
+const showHomeForBgm = methodBody('showHome');
+const startForBgm = methodBody('start');
+const onDestroyForBgm = methodBody('onDestroy');
 assert(
-  /input\.on\(Input\.EventType\.TOUCH_START,\s*this\.handleAudioUnlockGesture,\s*this\)/.test(registerBackgroundMusicUnlock) &&
-    /input\.on\(Input\.EventType\.MOUSE_DOWN,\s*this\.handleAudioUnlockGesture,\s*this\)/.test(registerBackgroundMusicUnlock),
-  'Browser BGM should register global first-touch/mouse gestures instead of relying only on bound button clicks.',
+  /this\.syncBackgroundMusic\s*\(\)/.test(showHomeForBgm),
+  'Home screen should actively try to start BGM after the loading scene transitions to home.',
 );
 assert(
-  /this\.audioUserGestureReceived\s*=\s*true/.test(handleAudioUnlockGesture) &&
-    /this\.unregisterBackgroundMusicUnlock\s*\(\)/.test(handleAudioUnlockGesture) &&
-    /this\.syncBackgroundMusic\s*\(\)/.test(handleAudioUnlockGesture),
-  'The first global user gesture should be remembered, unregister unlock listeners, and retry BGM immediately.',
+  !/registerBackgroundMusicUnlock|handleAudioUnlockGesture|audioUserGestureReceived/.test(source) &&
+    !/Input\.EventType\.TOUCH_START[\s\S]*syncBackgroundMusic/.test(startForBgm) &&
+    !/unregisterBackgroundMusicUnlock/.test(onDestroyForBgm),
+  'BGM should no longer register or wait for user-gesture unlock handlers.',
 );
 assert(
-  /!sys\.isBrowser\s*\|\|\s*this\.audioUserGestureReceived/.test(syncBackgroundMusic),
-  'Web BGM playback should wait for a user gesture while non-browser builds may still autoplay.',
+  !/this\.syncBackgroundMusic\s*\(\)/.test(loadBackgroundMusic) &&
+    /this\.state\s*===\s*'loading'/.test(syncBackgroundMusic),
+  'BGM resource loading should not start playback during the loading scene.',
+);
+assert(
+  /!this\.bgmSource\.playing/.test(syncBackgroundMusic) &&
+    /this\.bgmSource\.play\s*\(\)/.test(syncBackgroundMusic) &&
+    !/audioUserGestureReceived/.test(syncBackgroundMusic) &&
+    !/sys\.isBrowser/.test(syncBackgroundMusic),
+  'BGM playback should no longer be blocked by browser/user-gesture checks in syncBackgroundMusic().',
 );
 
 const useShuffleProp = methodBody('useShuffleProp');
@@ -514,6 +526,7 @@ assert(
 );
 
 const blockModalBackdropInput = methodBody('blockModalBackdropInput');
+const stopModalBackdropEvent = methodBody('stopModalBackdropEvent');
 assert(
   /TOUCH_START/.test(blockModalBackdropInput) &&
     /TOUCH_MOVE/.test(blockModalBackdropInput) &&
@@ -522,6 +535,10 @@ assert(
     /MOUSE_DOWN/.test(blockModalBackdropInput) &&
     /MOUSE_UP/.test(blockModalBackdropInput),
   'Generic modal blockers should swallow touch and mouse events so taps cannot pass through.',
+);
+assert(
+  /swallowModalEvent\s*\(\s*event\s*\)/.test(stopModalBackdropEvent),
+  'Rewarded confirmation modal backdrop should use the same typed event swallowing helper as settings.',
 );
 
 const playScreenEnter = methodBody('playScreenEnter');
