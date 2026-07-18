@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 为《雀趣消消乐》生成并验收 3 张可直接用于抖音小游戏后台的 600×600 PNG 方形图标。
+**Goal:** 为《雀趣消除乐》生成并验收 3 张可直接用于抖音小游戏后台的 600×600 PNG 方形图标。
 
 **Architecture:** 以项目现有微信小游戏图标作为风格参考，分别生成“眨眼萌牌”“三牌消除”“雀趣组合”三个独立构图。生成结果保存到独立的 `assets/douyin/` 目录，再进行统一的精确缩放与像素、透明度、视觉内容检查。
 
