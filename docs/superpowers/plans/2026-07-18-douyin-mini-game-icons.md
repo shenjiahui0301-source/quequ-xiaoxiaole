@@ -76,3 +76,31 @@
   git commit -m "feat: add Douyin mini-game icon candidates"
   ```
 
+### Task 3: 将候选 A 修订为双麻将构图
+
+**Files:**
+- Modify: `assets/douyin/douyin-icon-cute-tile.png`
+
+**Interfaces:**
+- Consumes: Task 2 已验收的“眨眼萌牌”600×600 PNG 和用户确认的双牌设计修订。
+- Produces: 保持原有画风、背景和主角气质的双麻将候选 A。
+
+- [ ] **Step 1: 编辑候选 A**
+
+  将原眨眼麻将保留为前景主角，在其后方斜向加入一张带不同圆点花色和开心表情的伙伴麻将；两张牌轻微靠拢，保持主次层级，禁止平均并排。
+
+- [ ] **Step 2: 精确缩放**
+
+  使用 Pillow LANCZOS 将编辑结果转为 600×600 RGB PNG，并覆盖 `assets/douyin/douyin-icon-cute-tile.png`。
+
+- [ ] **Step 3: 机械与视觉验收**
+
+  确认 PNG 尺寸为 600×600、模式为 RGB、四角不透明；视觉上确认恰好两张麻将、主角在前伙伴在后、无文字、水印、二维码、平台标识和圆角。
+
+- [ ] **Step 4: 提交修订图标**
+
+  ```powershell
+  git add -- assets/douyin/douyin-icon-cute-tile.png
+  git commit -m "feat: revise primary Douyin icon with two tiles"
+  ```
+
