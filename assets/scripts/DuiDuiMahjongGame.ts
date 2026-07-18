@@ -67,7 +67,7 @@ interface SlidePlan extends DuiSlidePlan<TileData> {
 }
 
 const MODE_NAMES = ['新手', '挑战', '地狱'];
-const GAME_TITLE = '雀趣消消乐';
+const GAME_TITLE = '雀趣消除乐';
 const GAME_SUBTITLE = '麻将连连看';
 const LEVELS: LevelConfig[][] = [
     [
