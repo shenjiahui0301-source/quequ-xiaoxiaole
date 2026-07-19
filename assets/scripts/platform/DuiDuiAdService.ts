@@ -153,29 +153,29 @@ export class DuiDuiAdService {
             return false;
         }
 
-        if (!this.bannerAd) {
-            const { windowWidth, windowHeight } = this.api.getSystemInfoSync();
-            this.bannerAd = this.api.createBannerAd({
-                adUnitId: this.config.bannerAdUnitId,
-                style: {
-                    left: 0,
-                    top: windowHeight,
-                    width: windowWidth,
-                },
-            });
-            this.bannerResizeCallback = (size: MiniGameBannerSize) => {
-                if (!this.bannerAd) {
-                    return;
-                }
-                this.bannerAd.style.left = (windowWidth - size.width) / 2;
-                this.bannerAd.style.top = windowHeight - size.height;
-            };
-            this.bannerErrorCallback = () => undefined;
-            this.bannerAd.onResize?.(this.bannerResizeCallback);
-            this.bannerAd.onError?.(this.bannerErrorCallback);
-        }
-
         try {
+            if (!this.bannerAd) {
+                const { windowWidth, windowHeight } = this.api.getSystemInfoSync();
+                this.bannerAd = this.api.createBannerAd({
+                    adUnitId: this.config.bannerAdUnitId,
+                    style: {
+                        left: 0,
+                        top: windowHeight,
+                        width: windowWidth,
+                    },
+                });
+                this.bannerResizeCallback = (size: MiniGameBannerSize) => {
+                    if (!this.bannerAd) {
+                        return;
+                    }
+                    this.bannerAd.style.left = (windowWidth - size.width) / 2;
+                    this.bannerAd.style.top = windowHeight - size.height;
+                };
+                this.bannerErrorCallback = () => undefined;
+                this.bannerAd.onResize?.(this.bannerResizeCallback);
+                this.bannerAd.onError?.(this.bannerErrorCallback);
+            }
+
             await Promise.resolve(this.bannerAd.show());
             return true;
         } catch {

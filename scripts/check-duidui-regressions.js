@@ -95,6 +95,12 @@ assert(
   'Banner resize handling should keep the native ad bottom-centered.',
 );
 assert(
+  /try\s*{[\s\S]*?createBannerAd/.test(
+    adService.slice(adService.indexOf('async showBanner'), adService.indexOf('destroyBanner')),
+  ),
+  'Banner creation failures should be caught so native API errors never interrupt the game.',
+);
+assert(
   /DuiDuiMahjongModel/.test(source) && /DuiDuiMahjongTheme/.test(source),
   'DuiDuiMahjongGame should act as the controller by importing the model and theme/view layer.',
 );
