@@ -580,4 +580,22 @@ assert(
   'bindPress() should keep elastic button feedback by default.',
 );
 
+const showHomeForBanner = methodBody('showHome');
+const showLoadingForBanner = methodBody('showLoading');
+const startLevelForBanner = methodBody('startLevel');
+const onDestroyForBanner = methodBody('onDestroy');
+assert(
+  /this\.adService\.showBanner\s*\(\s*\)/.test(showHomeForBanner) &&
+    !/showBanner\s*\(/.test(showLoadingForBanner),
+  'Banner display should begin only after loading reaches the home screen.',
+);
+assert(
+  !/destroyBanner\s*\(/.test(startLevelForBanner) && !/hideBanner\s*\(/.test(source),
+  'Banner should remain visible while switching into gameplay and result screens.',
+);
+assert(
+  /this\.adService\.destroyBanner\s*\(\s*\)/.test(onDestroyForBanner),
+  'Component teardown should release the native Banner instance.',
+);
+
 console.log('DuiDui regression checks passed.');
