@@ -72,6 +72,28 @@ assert(
   fs.existsSync(adServicePath) && fs.existsSync(adConfigPath),
   'Commercial builds should isolate WeChat/Douyin ad integration in platform adapter modules.',
 );
+const adService = fs.readFileSync(adServicePath, 'utf8');
+const adConfig = fs.readFileSync(adConfigPath, 'utf8');
+assert(
+  /bannerAdUnitId:\s*string/.test(adConfig) &&
+    /REPLACE_WITH_WECHAT_BANNER_AD_UNIT_ID/.test(adConfig) &&
+    /REPLACE_WITH_DOUYIN_BANNER_AD_UNIT_ID/.test(adConfig),
+  'WeChat and Douyin ad configs should provide separate Banner ad unit IDs.',
+);
+assert(
+  /createBannerAd/.test(adService) && /getSystemInfoSync/.test(adService),
+  'The platform ad service should adapt native Banner creation and window sizing APIs.',
+);
+assert(
+  /async showBanner\s*\(\s*\)\s*:\s*Promise<boolean>/.test(adService) &&
+    /destroyBanner\s*\(\s*\)/.test(adService),
+  'The ad service should expose Banner display and cleanup lifecycle methods.',
+);
+assert(
+  /\(windowWidth\s*-\s*size\.width\)\s*\/\s*2/.test(adService) &&
+    /windowHeight\s*-\s*size\.height/.test(adService),
+  'Banner resize handling should keep the native ad bottom-centered.',
+);
 assert(
   /DuiDuiMahjongModel/.test(source) && /DuiDuiMahjongTheme/.test(source),
   'DuiDuiMahjongGame should act as the controller by importing the model and theme/view layer.',
