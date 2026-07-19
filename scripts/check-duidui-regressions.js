@@ -7,10 +7,11 @@ const modelPath = path.join(__dirname, '..', 'assets', 'scripts', 'model', 'DuiD
 const themePath = path.join(__dirname, '..', 'assets', 'scripts', 'view', 'DuiDuiMahjongTheme.ts');
 const adServicePath = path.join(__dirname, '..', 'assets', 'scripts', 'platform', 'DuiDuiAdService.ts');
 const adConfigPath = path.join(__dirname, '..', 'assets', 'scripts', 'platform', 'DuiDuiAdConfig.ts');
+const sidebarServicePath = path.join(__dirname, '..', 'assets', 'scripts', 'platform', 'DuiDuiSidebarService.ts');
 const artDir = path.join(__dirname, '..', 'assets', 'resources', 'duidui');
 
 function methodBody(name) {
-  const markers = [`    private ${name}(`, `    ${name}(`];
+  const markers = [`    private ${name}(`, `    private async ${name}(`, `    ${name}(`, `    async ${name}(`];
   const start = markers.reduce((found, marker) => (found >= 0 ? found : source.indexOf(marker)), -1);
   if (start === -1) {
     throw new Error(`Missing method: ${name}`);
@@ -72,8 +73,13 @@ assert(
   fs.existsSync(adServicePath) && fs.existsSync(adConfigPath),
   'Commercial builds should isolate WeChat/Douyin ad integration in platform adapter modules.',
 );
+assert(
+  fs.existsSync(sidebarServicePath),
+  'Douyin sidebar revisit support should live in a dedicated platform adapter module.',
+);
 const adService = fs.readFileSync(adServicePath, 'utf8');
 const adConfig = fs.readFileSync(adConfigPath, 'utf8');
+const sidebarService = fs.readFileSync(sidebarServicePath, 'utf8');
 assert(
   /bannerAdUnitId:\s*string/.test(adConfig) &&
     /REPLACE_WITH_WECHAT_BANNER_AD_UNIT_ID/.test(adConfig) &&
@@ -107,6 +113,35 @@ assert(
 assert(
   /DuiDuiAdService/.test(source),
   'DuiDuiMahjongGame should call the ad service instead of embedding platform ad APIs directly.',
+);
+assert(
+  /class DuiDuiSidebarService/.test(sidebarService) &&
+    /checkSidebarSupport\s*\(\s*\)\s*:\s*Promise<boolean>/.test(sidebarService) &&
+    /navigateToSidebar\s*\(\s*\)\s*:\s*Promise<boolean>/.test(sidebarService) &&
+    /isFromSidebar\s*\(\s*\)\s*:\s*boolean/.test(sidebarService) &&
+    /destroy\s*\(\s*\)\s*:\s*void/.test(sidebarService),
+  'Douyin sidebar service should expose support, navigation, source detection, and cleanup methods.',
+);
+assert(
+  /checkScene/.test(sidebarService) &&
+    /navigateToScene/.test(sidebarService) &&
+    /onShow/.test(sidebarService) &&
+    /scene:\s*'sidebar'/.test(sidebarService),
+  'Douyin sidebar service should adapt checkScene, navigateToScene, and onShow for the sidebar scene.',
+);
+assert(
+  /platform\s*!==\s*'douyin'/.test(sidebarService) &&
+    /return\s+false/.test(sidebarService.slice(sidebarService.indexOf('checkSidebarSupport'), sidebarService.indexOf('navigateToSidebar'))) &&
+    /return\s+false/.test(sidebarService.slice(sidebarService.indexOf('navigateToSidebar'), sidebarService.indexOf('isFromSidebar'))),
+  'Sidebar APIs should be disabled on non-Douyin platforms.',
+);
+assert(
+  /launch_from/.test(sidebarService) && /homepage/.test(sidebarService) && /location/.test(sidebarService) && /sidebar_card/.test(sidebarService),
+  'Sidebar return detection should use Douyin launch/show parameters.',
+);
+assert(
+  /DuiDuiSidebarService/.test(source),
+  'DuiDuiMahjongGame should call the sidebar service instead of embedding Douyin sidebar APIs directly.',
 );
 
 const ensureDirectPair = methodBody('ensureDirectPair');
@@ -590,6 +625,8 @@ const showHomeForBanner = methodBody('showHome');
 const showLoadingForBanner = methodBody('showLoading');
 const startLevelForBanner = methodBody('startLevel');
 const onDestroyForBanner = methodBody('onDestroy');
+const updateSidebarEntry = methodBody('updateSidebarEntry');
+const handleSidebarEntry = methodBody('handleSidebarEntry');
 assert(
   /this\.adService\.showBanner\s*\(\s*\)/.test(showHomeForBanner) &&
     !/showBanner\s*\(/.test(showLoadingForBanner),
@@ -602,6 +639,28 @@ assert(
 assert(
   /this\.adService\.destroyBanner\s*\(\s*\)/.test(onDestroyForBanner),
   'Component teardown should release the native Banner instance.',
+);
+assert(
+  /this\.sidebarService\.checkSidebarSupport\s*\(\s*\)/.test(updateSidebarEntry) &&
+    /this\.state\s*!==\s*'home'/.test(updateSidebarEntry) &&
+    /this\.homeRoot/.test(updateSidebarEntry) &&
+    /侧边栏回访/.test(updateSidebarEntry) &&
+    /添加到侧边栏/.test(updateSidebarEntry),
+  'Home screen should render a neutral Douyin sidebar revisit entry only after service support is confirmed.',
+);
+assert(
+  /this\.sidebarService\.isFromSidebar\s*\(\s*\)/.test(handleSidebarEntry) &&
+    /this\.sidebarService\.navigateToSidebar\s*\(\s*\)/.test(handleSidebarEntry) &&
+    /已从侧边栏回到游戏/.test(handleSidebarEntry),
+  'Sidebar entry should either acknowledge sidebar return or navigate the user to the Douyin sidebar.',
+);
+assert(
+  /this\.sidebarService\.destroy\s*\(\s*\)/.test(onDestroyForBanner),
+  'Component teardown should release Douyin sidebar listeners.',
+);
+assert(
+  !/侧边栏福利|礼包|领取/.test(source),
+  'Sidebar revisit copy must not promise rewards or gifts when the game has no persistent reward inventory.',
 );
 
 console.log('DuiDui regression checks passed.');

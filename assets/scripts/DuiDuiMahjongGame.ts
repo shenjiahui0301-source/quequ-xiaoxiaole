@@ -27,6 +27,7 @@ import {
 } from 'cc';
 import { DuiBoardSnapshot, DuiDirection, DuiDuiMahjongModel, DuiSlidePlan } from './model/DuiDuiMahjongModel';
 import { DuiDuiAdService } from './platform/DuiDuiAdService';
+import { DuiDuiSidebarService } from './platform/DuiDuiSidebarService';
 import { DuiDuiMahjongTheme } from './view/DuiDuiMahjongTheme';
 
 const { ccclass } = _decorator;
@@ -110,6 +111,7 @@ export class DuiDuiMahjongGame extends Component {
     private timeLabel: Label | null = null;
     private remainLabel: Label | null = null;
     private readonly adService = new DuiDuiAdService();
+    private readonly sidebarService = new DuiDuiSidebarService();
     private readonly boardModel = new DuiDuiMahjongModel<TileData>();
     private readonly artSprites: Partial<Record<keyof typeof DuiDuiMahjongTheme.artPaths, SpriteFrame>> = {};
     private readonly loadingDuration = 2;
@@ -185,6 +187,7 @@ export class DuiDuiMahjongGame extends Component {
 
     onDestroy() {
         this.adService.destroyBanner();
+        this.sidebarService.destroy();
         this.stopBackgroundMusic();
     }
 
@@ -466,6 +469,7 @@ export class DuiDuiMahjongGame extends Component {
         this.playScreenEnter(this.homeRoot);
         this.syncBackgroundMusic();
         void this.adService.showBanner();
+        void this.updateSidebarEntry();
     }
 
     private makeHomeButton(name: string, text: string, desc: string, x: number, y: number, fill: Color, callback: () => void, icon: string) {
@@ -484,6 +488,36 @@ export class DuiDuiMahjongGame extends Component {
         drawRoundRect(action, 100, 58, fill, color(255, 255, 255, 120), 2, 22);
         addLabel(action, '开始', 24, color(255, 255, 255), 0, 0, 92, 52, true);
         this.bindPress(button, callback);
+    }
+
+    private async updateSidebarEntry() {
+        const supported = await this.sidebarService.checkSidebarSupport();
+        if (!supported || this.state !== 'home' || !this.homeRoot) {
+            return;
+        }
+        if (findNodeDeep(this.homeRoot, 'HomeSidebarEntry')) {
+            return;
+        }
+
+        const entry = makeNode('HomeSidebarEntry', this.homeRoot, 0, -510, 360, 64);
+        drawRoundRect(entry, 360, 64, color(255, 255, 247, 232), color(76, 150, 212), 3, 24);
+        addLabel(entry, '侧边栏回访', 25, color(76, 120, 176), -74, 8, 170, 32, true);
+        addLabel(entry, '添加到侧边栏', 19, color(102, 106, 92), 82, -10, 150, 26);
+        this.bindPress(entry, () => {
+            void this.handleSidebarEntry();
+        });
+    }
+
+    private async handleSidebarEntry() {
+        if (this.sidebarService.isFromSidebar()) {
+            this.showToast('已从侧边栏回到游戏');
+            return;
+        }
+
+        const opened = await this.sidebarService.navigateToSidebar();
+        if (!opened) {
+            this.showToast('当前暂不能添加到侧边栏');
+        }
     }
 
     private transitionToLevel(mode: number) {
