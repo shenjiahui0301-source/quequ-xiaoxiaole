@@ -72,6 +72,34 @@ assert(
   fs.existsSync(adServicePath) && fs.existsSync(adConfigPath),
   'Commercial builds should isolate WeChat/Douyin ad integration in platform adapter modules.',
 );
+const adService = fs.readFileSync(adServicePath, 'utf8');
+const adConfig = fs.readFileSync(adConfigPath, 'utf8');
+assert(
+  /bannerAdUnitId:\s*string/.test(adConfig) &&
+    /REPLACE_WITH_WECHAT_BANNER_AD_UNIT_ID/.test(adConfig) &&
+    /REPLACE_WITH_DOUYIN_BANNER_AD_UNIT_ID/.test(adConfig),
+  'WeChat and Douyin ad configs should provide separate Banner ad unit IDs.',
+);
+assert(
+  /createBannerAd/.test(adService) && /getSystemInfoSync/.test(adService),
+  'The platform ad service should adapt native Banner creation and window sizing APIs.',
+);
+assert(
+  /async showBanner\s*\(\s*\)\s*:\s*Promise<boolean>/.test(adService) &&
+    /destroyBanner\s*\(\s*\)/.test(adService),
+  'The ad service should expose Banner display and cleanup lifecycle methods.',
+);
+assert(
+  /\(windowWidth\s*-\s*size\.width\)\s*\/\s*2/.test(adService) &&
+    /windowHeight\s*-\s*size\.height/.test(adService),
+  'Banner resize handling should keep the native ad bottom-centered.',
+);
+assert(
+  /try\s*{[\s\S]*?createBannerAd/.test(
+    adService.slice(adService.indexOf('async showBanner'), adService.indexOf('destroyBanner')),
+  ),
+  'Banner creation failures should be caught so native API errors never interrupt the game.',
+);
 assert(
   /DuiDuiMahjongModel/.test(source) && /DuiDuiMahjongTheme/.test(source),
   'DuiDuiMahjongGame should act as the controller by importing the model and theme/view layer.',
@@ -556,6 +584,24 @@ const bindPress = methodBody('bindPress');
 assert(
   /animated\s*=\s*true/.test(bindPress) && /Tween\.stopAllByTarget/.test(bindPress) && /0\.92/.test(bindPress) && /1\.04/.test(bindPress) && /tween\s*\(/.test(bindPress),
   'bindPress() should keep elastic button feedback by default.',
+);
+
+const showHomeForBanner = methodBody('showHome');
+const showLoadingForBanner = methodBody('showLoading');
+const startLevelForBanner = methodBody('startLevel');
+const onDestroyForBanner = methodBody('onDestroy');
+assert(
+  /this\.adService\.showBanner\s*\(\s*\)/.test(showHomeForBanner) &&
+    !/showBanner\s*\(/.test(showLoadingForBanner),
+  'Banner display should begin only after loading reaches the home screen.',
+);
+assert(
+  !/destroyBanner\s*\(/.test(startLevelForBanner) && !/hideBanner\s*\(/.test(source),
+  'Banner should remain visible while switching into gameplay and result screens.',
+);
+assert(
+  /this\.adService\.destroyBanner\s*\(\s*\)/.test(onDestroyForBanner),
+  'Component teardown should release the native Banner instance.',
 );
 
 console.log('DuiDui regression checks passed.');

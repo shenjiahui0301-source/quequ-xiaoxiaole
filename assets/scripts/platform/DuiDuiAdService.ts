@@ -10,9 +10,33 @@ type MiniGameAd = {
     offError?: (callback: (error: unknown) => void) => void;
 };
 
+type MiniGameBannerSize = {
+    width: number;
+    height: number;
+};
+
+type MiniGameBannerAd = {
+    style: {
+        left?: number;
+        top?: number;
+        width: number;
+    };
+    show: () => Promise<void> | void;
+    onResize?: (callback: (size: MiniGameBannerSize) => void) => void;
+    offResize?: (callback: (size: MiniGameBannerSize) => void) => void;
+    onError?: (callback: (error: unknown) => void) => void;
+    offError?: (callback: (error: unknown) => void) => void;
+    destroy?: () => void;
+};
+
 type MiniGameApi = {
     createRewardedVideoAd?: (options: { adUnitId: string }) => MiniGameAd;
     createInterstitialAd?: (options: { adUnitId: string }) => MiniGameAd;
+    createBannerAd?: (options: {
+        adUnitId: string;
+        style: { left?: number; top?: number; width: number };
+    }) => MiniGameBannerAd;
+    getSystemInfoSync?: () => { windowWidth: number; windowHeight: number };
 };
 
 export interface DuiDuiRewardResult {
@@ -26,6 +50,9 @@ export class DuiDuiAdService {
     private readonly config: DuiDuiPlatformAdConfig;
     private rewardedVideoAd: MiniGameAd | null = null;
     private interstitialAd: MiniGameAd | null = null;
+    private bannerAd: MiniGameBannerAd | null = null;
+    private bannerResizeCallback: ((size: MiniGameBannerSize) => void) | null = null;
+    private bannerErrorCallback: ((error: unknown) => void) | null = null;
     private readonly bootTime = Date.now();
     private lastInterstitialTime = 0;
 
@@ -121,6 +148,57 @@ export class DuiDuiAdService {
         }
     }
 
+    async showBanner(): Promise<boolean> {
+        if (!this.api?.createBannerAd || !this.api.getSystemInfoSync || !isConfigured(this.config.bannerAdUnitId)) {
+            return false;
+        }
+
+        try {
+            if (!this.bannerAd) {
+                const { windowWidth, windowHeight } = this.api.getSystemInfoSync();
+                this.bannerAd = this.api.createBannerAd({
+                    adUnitId: this.config.bannerAdUnitId,
+                    style: {
+                        left: 0,
+                        top: windowHeight,
+                        width: windowWidth,
+                    },
+                });
+                this.bannerResizeCallback = (size: MiniGameBannerSize) => {
+                    if (!this.bannerAd) {
+                        return;
+                    }
+                    this.bannerAd.style.left = (windowWidth - size.width) / 2;
+                    this.bannerAd.style.top = windowHeight - size.height;
+                };
+                this.bannerErrorCallback = () => undefined;
+                this.bannerAd.onResize?.(this.bannerResizeCallback);
+                this.bannerAd.onError?.(this.bannerErrorCallback);
+            }
+
+            await Promise.resolve(this.bannerAd.show());
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    destroyBanner(): void {
+        if (!this.bannerAd) {
+            return;
+        }
+        if (this.bannerResizeCallback) {
+            this.bannerAd.offResize?.(this.bannerResizeCallback);
+        }
+        if (this.bannerErrorCallback) {
+            this.bannerAd.offError?.(this.bannerErrorCallback);
+        }
+        this.bannerAd.destroy?.();
+        this.bannerAd = null;
+        this.bannerResizeCallback = null;
+        this.bannerErrorCallback = null;
+    }
+
     private getRewardedVideoAd(): MiniGameAd {
         if (!this.rewardedVideoAd) {
             this.rewardedVideoAd = this.api!.createRewardedVideoAd!({
@@ -146,10 +224,10 @@ function detectAdPlatform(): DuiDuiAdPlatform {
     }
 
     const globalApi = globalThis as { tt?: MiniGameApi; wx?: MiniGameApi };
-    if (globalApi.tt?.createRewardedVideoAd || globalApi.tt?.createInterstitialAd) {
+    if (globalApi.tt?.createRewardedVideoAd || globalApi.tt?.createInterstitialAd || globalApi.tt?.createBannerAd) {
         return 'douyin';
     }
-    if (globalApi.wx?.createRewardedVideoAd || globalApi.wx?.createInterstitialAd) {
+    if (globalApi.wx?.createRewardedVideoAd || globalApi.wx?.createInterstitialAd || globalApi.wx?.createBannerAd) {
         return 'wechat';
     }
     return 'web';

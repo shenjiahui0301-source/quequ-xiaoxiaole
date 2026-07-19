@@ -184,6 +184,7 @@ export class DuiDuiMahjongGame extends Component {
     }
 
     onDestroy() {
+        this.adService.destroyBanner();
         this.stopBackgroundMusic();
     }
 
@@ -464,6 +465,7 @@ export class DuiDuiMahjongGame extends Component {
         this.bindPress(start, () => this.transitionToLevel(1));
         this.playScreenEnter(this.homeRoot);
         this.syncBackgroundMusic();
+        void this.adService.showBanner();
     }
 
     private makeHomeButton(name: string, text: string, desc: string, x: number, y: number, fill: Color, callback: () => void, icon: string) {
