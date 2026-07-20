@@ -257,8 +257,8 @@ assert(
   'A visible shuffle prop button and useShuffleProp() handler should exist.',
 );
 assert(
-  /showRewardedVideo\s*\(/.test(source) && /showInterstitial\s*\(/.test(source),
-  'Commercial flow should gate props with rewarded video and show interstitial ads after victory.',
+  !/showRewardedVideo\s*\(/.test(source) && /showInterstitial\s*\(/.test(source),
+  'WeChat initial review build should disable rewarded video props while keeping victory interstitial ads available.',
 );
 
 const buildGameRoot = methodBody('buildGameRoot');
@@ -280,8 +280,8 @@ assert(
   'Home, restart, hint, shuffle, and undo controls should all be present in the prop dock.',
 );
 assert(
-  /btn_hint[\s\S]*true/.test(buildGameRoot) && /btn_shuffle[\s\S]*true/.test(buildGameRoot) && /btn_undo[\s\S]*true/.test(buildGameRoot),
-  'Hint, shuffle, and undo prop buttons should show an AD badge because they require rewarded ads.',
+  !/btn_hint[\s\S]*true/.test(buildGameRoot) && !/btn_shuffle[\s\S]*true/.test(buildGameRoot) && !/btn_undo[\s\S]*true/.test(buildGameRoot),
+  'Hint, shuffle, and undo prop buttons should not show AD badges in the WeChat initial review build.',
 );
 assert(
   /TopStat_/.test(buildGameRoot) && /makeStatPill\s*\(/.test(buildGameRoot),
@@ -411,8 +411,8 @@ assert(
   'makeControlButton() should attach prop buttons to the prop dock, not scatter controls across gameRoot.',
 );
 assert(
-  /requiresAd/.test(makeControlButton) && /AD/.test(makeControlButton),
-  'makeControlButton() should render an AD badge on ad-gated prop buttons.',
+  !/requiresAd/.test(makeControlButton) && !/AD/.test(makeControlButton),
+  'makeControlButton() should not render AD badges in the WeChat initial review build.',
 );
 
 const syncBackgroundMusic = methodBody('syncBackgroundMusic');
@@ -448,16 +448,16 @@ const useHintProp = methodBody('useHintProp');
 const undo = methodBody('undo');
 const transitionToHome = methodBody('transitionToHome');
 assert(
-  /showRewardedConfirm\s*\(\s*'hint'/.test(useHintProp) && /showHint\s*\(\s*false\s*\)/.test(useHintProp),
-  'Manual hint prop should show a rewarded-ad confirmation before showing a hint.',
+  !/showRewardedConfirm/.test(useHintProp) && /showHint\s*\(\s*false\s*\)/.test(useHintProp),
+  'Manual hint prop should directly show a hint in the WeChat initial review build.',
 );
 assert(
-  /state === 'choosing'/.test(useShuffleProp) && /clearChoiceLayer\s*\(/.test(useShuffleProp) && /state !== 'playing'/.test(useShuffleProp) && /showRewardedConfirm\s*\(\s*'shuffle'/.test(useShuffleProp),
-  'useShuffleProp() should clear choice mode, guard against non-playing states, and require rewarded-ad confirmation.',
+  /state === 'choosing'/.test(useShuffleProp) && /clearChoiceLayer\s*\(/.test(useShuffleProp) && /state !== 'playing'/.test(useShuffleProp) && !/showRewardedConfirm/.test(useShuffleProp) && /shuffleBoard\s*\(\s*true\s*\)/.test(useShuffleProp),
+  'useShuffleProp() should clear choice mode, guard against non-playing states, and directly shuffle in the WeChat initial review build.',
 );
 assert(
-  /state !== 'playing'/.test(undo) && /undoStack\.length === 0/.test(undo) && /showRewardedConfirm\s*\(\s*'undo'/.test(undo),
-  'undo() should not run while another skill/mode is active, when no snapshot exists, or before rewarded-ad confirmation.',
+  /state !== 'playing'/.test(undo) && /undoStack\.length === 0/.test(undo) && !/showRewardedConfirm/.test(undo) && /restoreSnapshot\s*\(/.test(undo),
+  'undo() should guard invalid states and directly restore snapshots in the WeChat initial review build.',
 );
 assert(
   /state === 'choosing'/.test(transitionToHome) && /clearChoiceLayer\s*\(/.test(transitionToHome) && /playScreenExit\s*\(/.test(transitionToHome),
@@ -524,33 +524,9 @@ assert(
   'closeResultModal() should fade and shrink the result panel before running the next action.',
 );
 
-const rewardedConfirmHintProp = methodBody('useHintProp');
-const rewardedConfirmShuffleProp = methodBody('useShuffleProp');
-const rewardedConfirmUndo = methodBody('undo');
 assert(
-  /showRewardedConfirm\s*\(\s*'hint'/.test(rewardedConfirmHintProp) &&
-    /showRewardedConfirm\s*\(\s*'shuffle'/.test(rewardedConfirmShuffleProp) &&
-    /showRewardedConfirm\s*\(\s*'undo'/.test(rewardedConfirmUndo),
-  'Hint, shuffle, and undo buttons should show a rewarded-ad confirmation modal before requesting ads.',
-);
-
-const showRewardedConfirm = methodBody('showRewardedConfirm');
-assert(
-  /RewardedConfirmBlocker/.test(showRewardedConfirm) &&
-    /getAdaptiveOverlaySize\s*\(\)/.test(showRewardedConfirm) &&
-    /blockModalBackdropInput\s*\(\s*blocker\s*\)/.test(showRewardedConfirm),
-  'Rewarded confirmation modal should use an adaptive non-button blocker that swallows input without click-through.',
-);
-assert(
-  /RewardedConfirmClose/.test(showRewardedConfirm) &&
-    /hideRewardedConfirm\s*\(\s*\)/.test(showRewardedConfirm) &&
-    /RewardedConfirmButton/.test(showRewardedConfirm) &&
-    /runRewardedProp\s*\(/.test(showRewardedConfirm),
-  'Rewarded confirmation modal should have a close button and only start the ad flow from the confirm button.',
-);
-assert(
-  !/bindPress\s*\(\s*blocker/.test(showRewardedConfirm),
-  'Rewarded confirmation blocker must not be a button or close the modal when tapped.',
+  !/showRewardedConfirm|RewardedConfirm|runRewardedProp|观看广告|广告加载中|需要观看广告/.test(source),
+  'WeChat initial review build should remove rewarded-ad confirmation UI and copy from the game controller.',
 );
 
 const blockModalBackdropInput = methodBody('blockModalBackdropInput');

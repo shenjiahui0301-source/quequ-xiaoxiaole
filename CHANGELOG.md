@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-07-20
+
+### Changed
+- 创建微信初版审核专用构建分支，屏蔽道具激励视频广告门槛。
+- 提示、洗牌、撤回道具点击后直接使用，不再弹出观看广告确认弹窗。
+- 移除道具按钮上的 AD 标记，避免审核包展示未接入广告位的激励视频入口。
+
+### Verification
+- `node scripts/check-duidui-regressions.js`
+- `git diff --check`
+
 ## 2026-07-19
 
 ### Added
