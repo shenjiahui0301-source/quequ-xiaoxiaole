@@ -172,9 +172,10 @@ export class DuiDuiMahjongGame extends Component {
     }
 
     start() {
-        this.loadArtSprites();
-        this.buildShell();
-        this.showLoading();
+        this.loadArtSprites(() => {
+            this.buildShell();
+            this.showLoading();
+        });
         this.loadBackgroundMusic();
         this.loadClickSound();
         this.loadRemoveSound();
@@ -227,17 +228,47 @@ export class DuiDuiMahjongGame extends Component {
         this.toastLabel = addLabel(this.toastNode, '', 24, color(255, 255, 255), 0, 0, 520, 54, true);
     }
 
-    private loadArtSprites() {
+    private loadArtSprites(onReady?: () => void) {
         const paths = DuiDuiMahjongTheme.artPaths;
-        (Object.keys(paths) as Array<keyof typeof paths>).forEach((key) => {
+        const keys = Object.keys(paths) as Array<keyof typeof paths>;
+
+        // 1. 处理空路径情况
+        if (keys.length === 0) {
+            onReady?.();
+            return;
+        }
+        let pending = keys.length;
+        let hasError = false;
+
+        // 2. 添加完成检查，防止重复调用
+        let isCompleted = false;
+        const finish = () => {
+            if (isCompleted) return;
+            pending -= 1;
+            if (pending <= 0) {
+                isCompleted = true;
+                // 3. 即使有错误也调用回调，让调用方决定如何处理
+                onReady?.();
+            }
+        };
+
+        if (pending === 0) {
+          onReady?.();
+          return;
+        }
+
+        keys.forEach((key) => {
             resources.load(`${paths[key]}/spriteFrame`, SpriteFrame, (err, spriteFrame) => {
                 if (err || !spriteFrame) {
+                    hasError = true;
+                    finish();
                     return;
                 }
                 this.artSprites[key] = spriteFrame;
                 if (key === 'background') {
                     this.applyBackgroundSprite();
                 }
+                finish();
             });
         });
     }
@@ -556,6 +587,7 @@ export class DuiDuiMahjongGame extends Component {
         this.timeLeft = this.level.time;
         this.undoStack = [];
         this.state = 'playing';
+        //void this.adService.syncBannerForScene('gameplay');
 
         this.clearGameNodes();
         this.buildGameRoot();
@@ -1300,6 +1332,7 @@ export class DuiDuiMahjongGame extends Component {
         }
 
         this.state = success ? 'success' : 'failed';
+        //void this.adService.syncBannerForScene('result');
         this.modalLayer.active = true;
         destroyChildren(this.modalLayer);
 
