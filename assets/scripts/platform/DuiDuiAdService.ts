@@ -22,12 +22,15 @@ type MiniGameBannerAd = {
         width: number;
     };
     show: () => Promise<void> | void;
+    hide?: () => Promise<void> | void;
     onResize?: (callback: (size: MiniGameBannerSize) => void) => void;
     offResize?: (callback: (size: MiniGameBannerSize) => void) => void;
     onError?: (callback: (error: unknown) => void) => void;
     offError?: (callback: (error: unknown) => void) => void;
     destroy?: () => void;
 };
+
+type DuiDuiBannerScene = 'home' | 'gameplay' | 'result';
 
 type MiniGameApi = {
     createRewardedVideoAd?: (options: { adUnitId: string }) => MiniGameAd;
@@ -181,6 +184,26 @@ export class DuiDuiAdService {
         } catch {
             return false;
         }
+    }
+
+    async syncBannerForScene(scene: DuiDuiBannerScene): Promise<boolean> {
+        if ((this.platform === 'douyin' || this.platform === 'wechat') && scene === 'gameplay') {
+            this.hideBanner();
+            return false;
+        }
+
+        return this.showBanner();
+    }
+
+    hideBanner(): void {
+        if (!this.bannerAd) {
+            return;
+        }
+        if (this.bannerAd.hide) {
+            void Promise.resolve(this.bannerAd.hide()).catch(() => undefined);
+            return;
+        }
+        this.destroyBanner();
     }
 
     destroyBanner(): void {
