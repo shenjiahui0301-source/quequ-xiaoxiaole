@@ -2,11 +2,13 @@ import { Color } from 'cc';
 
 export interface DuiDuiArtPaths {
     background: string;
+     mahjongAtlas: string;
 }
 
 export class DuiDuiMahjongTheme {
     static readonly artPaths: DuiDuiArtPaths = {
         background: 'duidui/background_clean',
+        mahjongAtlas: 'duidui/mahjong-font',
     };
 
     static readonly symbols = [

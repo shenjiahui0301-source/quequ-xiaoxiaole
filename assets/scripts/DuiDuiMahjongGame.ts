@@ -12,10 +12,12 @@ import {
     LabelOutline,
     Layers,
     Node,
+    Rect,
     ResolutionPolicy,
     resources,
     Sprite,
     SpriteFrame,
+    Size,
     sys,
     Tween,
     tween,
@@ -57,6 +59,35 @@ interface TileData {
     row: number;
     col: number;
     node: Node;
+    highlighted: boolean;
+}
+
+interface EffectChip {
+    x: number;
+    y: number;
+    targetX: number;
+    targetY: number;
+    size: number;
+    age: number;
+    duration: number;
+    color: Color;
+}
+
+interface ControlButtonVisual {
+    x: number;
+    fill: Color;
+    requiresAd: boolean;
+}
+
+interface EffectShape {
+    node: Node;
+    kind: 'roundRect' | 'circle';
+    width: number;
+    height: number;
+    radius: number;
+    fill?: Color;
+    stroke?: Color;
+    lineWidth: number;
 }
 
 type BoardSnapshot = DuiBoardSnapshot;
@@ -97,9 +128,12 @@ export class DuiDuiMahjongGame extends Component {
     private loadingProgressFill: Node | null = null;
     private homeRoot: Node | null = null;
     private gameRoot: Node | null = null;
+    private gameUIGraphics: Graphics | null = null;
     private boardPanel: Node | null = null;
+    private boardGraphics: Graphics | null = null;
     private boardLayer: Node | null = null;
     private effectLayer: Node | null = null;
+    private effectGraphics: Graphics | null = null;
     private choiceLayer: Node | null = null;
     private modalLayer: Node | null = null;
     private settingsLayer: Node | null = null;
@@ -111,6 +145,7 @@ export class DuiDuiMahjongGame extends Component {
     private readonly adService = new DuiDuiAdService();
     private readonly boardModel = new DuiDuiMahjongModel<TileData>();
     private readonly artSprites: Partial<Record<keyof typeof DuiDuiMahjongTheme.artPaths, SpriteFrame>> = {};
+    private readonly mahjongSymbolFrames: SpriteFrame[] = [];
     private readonly loadingDuration = 2;
     private loadingElapsed = 0;
     private bgmSource: AudioSource | null = null;
@@ -119,6 +154,7 @@ export class DuiDuiMahjongGame extends Component {
     private clickClip: AudioClip | null = null;
     private removeSource: AudioSource | null = null;
     private removeClip: AudioClip | null = null;
+    private toastTween: Tween<UIOpacity> | null = null;
 
     private state: GameState = 'home';
     private mode = 1;
@@ -133,7 +169,13 @@ export class DuiDuiMahjongGame extends Component {
     private boardW = 0;
     private boardH = 0;
     private timeLeft = 0;
+    private lastDisplayedSecond: number | null = null;
     private undoStack: BoardSnapshot[] = [];
+    private departingTiles: TileData[] = [];
+    private effectChips: EffectChip[] = [];
+    private effectShapes: EffectShape[] = [];
+    private boardVisualSignature = '';
+    private controlButtonVisuals: ControlButtonVisual[] = [];
 
     private activeTile: TileData | null = null;
     private selectedTile: TileData | null = null;
@@ -187,6 +229,9 @@ export class DuiDuiMahjongGame extends Component {
     }
 
     update(dt: number) {
+        this.syncBoardGraphics();
+        this.updateEffectChips(dt);
+
         if (this.state === 'loading') {
             this.updateLoading(dt);
             return;
@@ -267,10 +312,25 @@ export class DuiDuiMahjongGame extends Component {
                 this.artSprites[key] = spriteFrame;
                 if (key === 'background') {
                     this.applyBackgroundSprite();
+                } else if (key === 'mahjongAtlas') {
+                    this.createMahjongSymbolFrames(spriteFrame);
                 }
                 finish();
             });
         });
+    }
+
+    private createMahjongSymbolFrames(atlasFrame: SpriteFrame) {
+        this.mahjongSymbolFrames.length = 0;
+        const cellSize = 64;
+        const columns = 8;
+        for (let index = 0; index < DuiDuiMahjongTheme.symbols.length; index++) {
+            const frame = new SpriteFrame();
+            frame.texture = atlasFrame.texture;
+            frame.rect = new Rect((index % columns) * cellSize, Math.floor(index / columns) * cellSize, cellSize, cellSize);
+            frame.originalSize = new Size(cellSize, cellSize);
+            this.mahjongSymbolFrames.push(frame);
+        }
     }
 
     private loadBackgroundMusic() {
@@ -523,6 +583,7 @@ export class DuiDuiMahjongGame extends Component {
         const outgoing = this.gameRoot || this.homeRoot;
         this.playScreenExit(outgoing, () => {
             this.screenTransitioning = false;
+            this.stopToast();
             this.startLevel(mode);
         });
     }
@@ -539,6 +600,7 @@ export class DuiDuiMahjongGame extends Component {
         const outgoing = this.gameRoot || this.homeRoot;
         this.playScreenExit(outgoing, () => {
             this.screenTransitioning = false;
+            this.stopToast();
             this.showHome();
         });
     }
@@ -585,6 +647,7 @@ export class DuiDuiMahjongGame extends Component {
         this.levelByMode[this.mode] = clampInt(this.levelByMode[this.mode], 0, maxIndex);
         this.level = LEVELS[this.mode][this.levelByMode[this.mode]];
         this.timeLeft = this.level.time;
+        this.lastDisplayedSecond = null;
         this.undoStack = [];
         this.state = 'playing';
         //void this.adService.syncBannerForScene('gameplay');
@@ -611,28 +674,30 @@ export class DuiDuiMahjongGame extends Component {
         }
 
         this.gameRoot = makeNode('Game', this.root, 0, 0, this.designW, this.designH);
+        const gameUIGraphicsNode = makeNode('GameUIGraphics', this.gameRoot, 0, 0, this.designW, this.designH);
+        this.gameUIGraphics = gameUIGraphicsNode.addComponent(Graphics);
+        this.controlButtonVisuals = [];
 
         const top = makeNode('TopHud', this.gameRoot, 0, 520, 650, 152);
-        drawRoundRect(top, 650, 152, color(255, 253, 233, 232), color(255, 194, 76), 5, 34);
         const titleBadge = makeNode('TopTitleBadge', top, 0, 40, 430, 56);
-        drawRoundRect(titleBadge, 430, 56, color(70, 177, 143, 224), color(255, 255, 255, 140), 3, 22);
         addLabel(titleBadge, modeTitle(this.mode), 28, color(255, 255, 255), 0, 0, 380, 42, true);
         this.levelLabel = this.makeStatPill(top, 'TopStat_Level', '关卡', -204, -30, 168, color(46, 151, 116));
         this.timeLabel = this.makeStatPill(top, 'TopStat_Time', '时间', 0, -30, 168, color(211, 72, 76));
         this.remainLabel = this.makeStatPill(top, 'TopStat_Remain', '剩余', 204, -30, 168, color(69, 108, 190));
 
         const playFrame = makeNode('PlayFrame', this.gameRoot, 0, -2, 670, 802);
-        drawRoundRect(playFrame, 670, 802, color(255, 250, 225, 220), color(93, 179, 143), 5, 36);
         const tipRibbon = makeNode('TipRibbon', playFrame, 0, 352, 560, 54);
-        drawRoundRect(tipRibbon, 560, 54, color(70, 177, 143, 224), color(255, 255, 255, 140), 2, 22);
         addLabel(tipRibbon, '滑动麻将，同线相同即可消除', 23, color(255, 255, 255), 0, 0, 520, 42, true);
 
         const boardSlot = makeNode('BoardSlot', playFrame, 0, -24, 628, 674);
-        drawRoundRect(boardSlot, 628, 674, color(255, 255, 246, 210), color(255, 219, 130), 4, 28);
 
         this.boardPanel = makeNode('BoardPanel', boardSlot, 0, -2, 610, 610);
+        const boardGraphicsNode = makeNode('BoardGraphics', this.boardPanel, 0, 0, 600, 600);
+        this.boardGraphics = boardGraphicsNode.addComponent(Graphics);
         this.boardLayer = makeNode('BoardLayer', this.boardPanel, 0, 0, 600, 600);
         this.effectLayer = makeNode('EffectLayer', this.boardPanel, 0, 0, 600, 600);
+        const effectGraphicsNode = makeNode('EffectGraphics', this.effectLayer, 0, 0, 600, 600);
+        this.effectGraphics = effectGraphicsNode.addComponent(Graphics);
         this.choiceLayer = makeNode('ChoiceLayer', this.boardPanel, 0, 0, 600, 600);
         this.choiceLayer.active = false;
 
@@ -640,23 +705,22 @@ export class DuiDuiMahjongGame extends Component {
         this.modalLayer.active = false;
 
         const dock = makeNode('PropDock', this.gameRoot, 0, -546, 660, 132);
-        drawRoundRect(dock, 660, 132, color(255, 253, 238, 236), color(255, 204, 86), 4, 34);
         this.makeControlButton('btn_home', '首页', -275, 0, color(88, 137, 198), () => this.transitionToHome(), '回');
         this.makeControlButton('btn_restart', '重开', -165, 0, color(220, 88, 74), () => this.transitionToLevel(this.mode), '刷');
-        this.makeControlButton('btn_hint', '提示', -55, 0, color(52, 164, 121), () => this.useHintProp(), '?');
-        this.makeControlButton('btn_shuffle', '洗牌', 55, 0, color(146, 98, 198), () => this.useShuffleProp(), '洗');
-        this.makeControlButton('btn_undo', '撤回', 165, 0, color(225, 151, 52), () => this.undo(), '退');
+        this.makeControlButton('btn_hint', '提示', -55, 0, color(52, 164, 121), () => this.useHintProp(), '?', true);
+        this.makeControlButton('btn_shuffle', '洗牌', 55, 0, color(146, 98, 198), () => this.useShuffleProp(), '洗', true);
+        this.makeControlButton('btn_undo', '撤回', 165, 0, color(225, 151, 52), () => this.undo(), '退', true);
         this.makeControlButton('btn_settings', '设置', 275, 0, color(78, 132, 190), () => this.showSettings(), '设');
+        this.redrawGameUI();
     }
 
     private makeStatPill(parent: Node, name: string, title: string, x: number, y: number, w: number, accent: Color): Label {
         const pill = makeNode(name, parent, x, y, w, 72);
-        drawRoundRect(pill, w, 72, color(255, 255, 255, 238), accent, 3, 22);
         addLabel(pill, title, 15, color(104, 108, 96), 0, 18, w - 16, 22, false);
         return addLabel(pill, '', 23, accent, 0, -12, w - 16, 36, true);
     }
 
-    private makeControlButton(name: string, text: string, x: number, y: number, fill: Color, callback: () => void, icon = '') {
+    private makeControlButton(name: string, text: string, x: number, y: number, fill: Color, callback: () => void, icon = '', requiresAd = false) {
         if (!this.gameRoot) {
             return;
         }
@@ -664,11 +728,14 @@ export class DuiDuiMahjongGame extends Component {
         const parent = findNodeDeep(this.gameRoot, 'PropDock') || this.gameRoot;
         const button = makeNode(name, parent, x, y, 96, 112);
         const shadow = makeNode(`${name}_Shadow`, button, 0, -7, 84, 64);
-        drawRoundRect(shadow, 84, 64, color(157, 111, 55, 68), color(255, 255, 255, 0), 0, 24);
         const iconBack = makeNode(`${name}_Icon`, button, 0, 14, 78, 78);
-        drawRoundRect(iconBack, 78, 78, fill, color(255, 255, 255, 172), 4, 28);
         addLabel(iconBack, icon || text.slice(0, 1), 30, color(255, 255, 255), 0, 0, 66, 58, true);
+        if (requiresAd) {
+            const adBadge = makeNode(`${name}_AdBadge`, button, 28, 44, 42, 24);
+            addLabel(adBadge, 'AD', 14, color(255, 255, 255), 0, 0, 36, 18, true);
+        }
         addLabel(button, text, 18, color(94, 78, 57), 0, -40, 92, 28, true);
+        this.controlButtonVisuals.push({ x, fill, requiresAd });
         this.bindPress(button, callback);
     }
 
@@ -685,11 +752,12 @@ export class DuiDuiMahjongGame extends Component {
         let cursor = 0;
         for (let row = 0; row < this.level.rows; row++) {
             for (let col = 0; col < this.level.cols; col++) {
-                this.addTile(values[cursor++], row, col);
+                this.addTile(values[cursor++], row, col, false);
             }
         }
 
-        this.ensureDirectPair();
+        this.ensureDirectPair(false);
+        this.redrawBoardGraphics();
         this.refreshHud();
     }
 
@@ -707,6 +775,9 @@ export class DuiDuiMahjongGame extends Component {
         const panelH = Math.min(650, this.boardH + 30 + (this.level.difficulty > 1 ? 36 : 0));
 
         setSize(this.boardPanel, panelW, panelH);
+        if (this.boardGraphics) {
+            setSize(this.boardGraphics.node, this.boardW, this.boardH);
+        }
         setSize(this.boardLayer, this.boardW, this.boardH);
         setSize(this.effectLayer, this.boardW, this.boardH);
         setSize(this.choiceLayer, this.boardW, this.boardH);
@@ -714,26 +785,49 @@ export class DuiDuiMahjongGame extends Component {
             this.boardPanel.setPosition(0, 0, 0);
         }
 
-        if (this.boardPanel) {
-            drawRoundRect(this.boardPanel, panelW, panelH, color(255, 252, 238, 236), color(255, 188, 78), 4, 26);
-            const inner = this.boardPanel.getComponent(Graphics);
-            if (inner) {
-                inner.fillColor = color(255, 255, 255, 142);
-                inner.roundRect(-panelW / 2 + 12, -panelH / 2 + 12, panelW - 24, panelH - 24, 20);
-                inner.fill();
-                inner.strokeColor = color(96, 183, 146, 96);
-                inner.lineWidth = 2;
-                inner.roundRect(-panelW / 2 + 20, -panelH / 2 + 20, panelW - 40, panelH - 40, 16);
-                inner.stroke();
-                inner.fillColor = color(255, 220, 105, 80);
-                inner.circle(-panelW / 2 + 36, panelH / 2 - 36, 12);
-                inner.circle(panelW / 2 - 38, -panelH / 2 + 36, 10);
-                inner.fill();
+        this.redrawGameUI();
+    }
+
+    private redrawGameUI() {
+        const graphics = this.gameUIGraphics;
+        if (!graphics) {
+            return;
+        }
+        graphics.clear();
+        drawSharedRoundRect(graphics, 0, 520, 650, 152, color(255, 253, 233, 232), color(255, 194, 76), 5, 34);
+        drawSharedRoundRect(graphics, 0, 560, 430, 56, color(70, 177, 143, 224), color(255, 255, 255, 140), 3, 22);
+        drawSharedRoundRect(graphics, -204, 490, 168, 72, color(255, 255, 255, 238), color(46, 151, 116), 3, 22);
+        drawSharedRoundRect(graphics, 0, 490, 168, 72, color(255, 255, 255, 238), color(211, 72, 76), 3, 22);
+        drawSharedRoundRect(graphics, 204, 490, 168, 72, color(255, 255, 255, 238), color(69, 108, 190), 3, 22);
+
+        drawSharedRoundRect(graphics, 0, -2, 670, 802, color(255, 250, 225, 220), color(93, 179, 143), 5, 36);
+        drawSharedRoundRect(graphics, 0, 350, 560, 54, color(70, 177, 143, 224), color(255, 255, 255, 140), 2, 22);
+        drawSharedRoundRect(graphics, 0, -26, 628, 674, color(255, 255, 246, 210), color(255, 219, 130), 4, 28);
+        drawSharedRoundRect(graphics, 0, -546, 660, 132, color(255, 253, 238, 236), color(255, 204, 86), 4, 34);
+
+        if (this.boardW > 0 && this.boardH > 0) {
+            const panelW = Math.min(610, this.boardW + 30 + (this.level.difficulty > 1 ? 36 : 0));
+            const panelH = Math.min(650, this.boardH + 30 + (this.level.difficulty > 1 ? 36 : 0));
+            const panelY = -28;
+            drawSharedRoundRect(graphics, 0, panelY, panelW, panelH, color(255, 252, 238, 236), color(255, 188, 78), 4, 26);
+            drawSharedRoundRect(graphics, 0, panelY, panelW - 24, panelH - 24, color(255, 255, 255, 142), undefined, 0, 20);
+            drawSharedRoundRect(graphics, 0, panelY, panelW - 40, panelH - 40, color(255, 255, 255, 0), color(96, 183, 146, 96), 2, 16);
+            graphics.fillColor = color(255, 220, 105, 80);
+            graphics.circle(-panelW / 2 + 36, panelY + panelH / 2 - 36, 12);
+            graphics.circle(panelW / 2 - 38, panelY - panelH / 2 + 36, 10);
+            graphics.fill();
+        }
+
+        for (const button of this.controlButtonVisuals) {
+            drawSharedRoundRect(graphics, button.x, -553, 84, 64, color(157, 111, 55, 68), undefined, 0, 24);
+            drawSharedRoundRect(graphics, button.x, -532, 78, 78, button.fill, color(255, 255, 255, 172), 4, 28);
+            if (button.requiresAd) {
+                drawSharedRoundRect(graphics, button.x + 28, -502, 42, 24, color(255, 76, 64), color(255, 255, 255, 180), 2, 10);
             }
         }
     }
 
-    private addTile(type: number, row: number, col: number) {
+    private addTile(type: number, row: number, col: number, redraw = true) {
         if (!this.boardLayer) {
             return;
         }
@@ -745,55 +839,128 @@ export class DuiDuiMahjongGame extends Component {
             row,
             col,
             node,
+            highlighted: false,
         };
 
         node.setPosition(this.cellToPosition(row, col));
         this.grid[row][col] = tile;
         this.tiles.push(tile);
-        this.drawTile(tile, false);
+        this.drawTile(tile, false, redraw);
         this.bindTileEvents(tile);
     }
 
-    private drawTile(tile: TileData, highlighted: boolean) {
+    private drawTile(tile: TileData, highlighted: boolean, redraw = true) {
         const node = tile.node;
         setSize(node, this.tileW, this.tileH);
         destroyChildren(node);
+        tile.highlighted = highlighted;
 
         const accent = DuiDuiMahjongTheme.accentColor(tile.type);
-        const face = highlighted ? color(255, 246, 166) : color(255, 255, 247);
-        const border = highlighted ? color(231, 76, 70) : color(78, 139, 111);
-        drawRoundRect(node, this.tileW, this.tileH, color(151, 107, 66, 92), color(255, 255, 255, 0), 0, 10);
         const body = makeNode('TileFace', node, 0, Math.max(2, this.tileH * 0.03), this.tileW - 4, this.tileH - 8);
-        drawRoundRect(body, this.tileW - 4, this.tileH - 8, face, border, highlighted ? 5 : 3, 10);
 
-        const g = body.getComponent(Graphics);
-        if (g) {
-            g.fillColor = color(255, 255, 255, 180);
-            g.roundRect(-this.tileW / 2 + 11, this.tileH / 2 - 28, this.tileW - 22, 12, 6);
-            g.fill();
-            g.fillColor = accent;
-            g.circle(-this.tileW / 2 + 18, this.tileH / 2 - 22, Math.max(4, this.tileW * 0.065));
-            g.fill();
-            g.fillColor = color(accent.r, accent.g, accent.b, 150);
-            g.circle(this.tileW / 2 - 18, -this.tileH / 2 + 18, Math.max(3, this.tileW * 0.052));
-            g.fill();
-            if (highlighted) {
-                g.strokeColor = color(255, 255, 255, 210);
-                g.lineWidth = 2;
-                g.roundRect(-this.tileW / 2 + 9, -this.tileH / 2 + 11, this.tileW - 18, this.tileH - 22, 8);
-                g.stroke();
-            }
+        const symbolFrame = this.mahjongSymbolFrames[(tile.type - 1) % this.mahjongSymbolFrames.length];
+        if (symbolFrame) {
+            const symbol = DuiDuiMahjongTheme.symbol(tile.type);
+            const symbolScale = symbol.length > 1 ? 0.68 : 0.56;
+            const symbolSize = Math.floor(this.tileW * symbolScale);
+
+            // const outlineNode = makeNode('TileSymbolOutline', body, 0, 3, symbolSize, symbolSize);
+            // const outlineSprite = outlineNode.addComponent(Sprite);
+            // outlineSprite.sizeMode = Sprite.SizeMode.CUSTOM;
+            // outlineSprite.spriteFrame = symbolFrame;
+            // outlineSprite.color = color(73, 43, 26, 100);
+            // setSize(outlineNode, Math.floor(symbolSize * 1.2), Math.floor(symbolSize * 1.2));
+
+            const symbolNode = makeNode('TileSymbol', body, 0, 3, symbolSize, symbolSize);
+            const symbolSprite = symbolNode.addComponent(Sprite);
+            symbolSprite.sizeMode = Sprite.SizeMode.CUSTOM;
+            symbolSprite.spriteFrame = symbolFrame;
+            setSize(symbolNode, symbolSize, symbolSize);
+            symbolSprite.color = accent;
         }
-
-        const symbol = DuiDuiMahjongTheme.symbol(tile.type);
-        const fontSize = symbol.length > 1 ? Math.floor(this.tileW * 0.32) : Math.floor(this.tileW * 0.46);
-        addLabel(body, symbol, fontSize, accent, 0, 3, this.tileW - 14, this.tileH - 30, true);
-        addLabel(body, String(tile.type), Math.max(13, Math.floor(this.tileW * 0.18)), color(87, 92, 78), 0, -this.tileH * 0.34, this.tileW - 12, 22);
 
         if (this.level.difficulty > 1) {
             node.angle = tile.id % 2 === 0 ? 3 : -3;
         } else {
             node.angle = 0;
+        }
+        if (redraw) {
+            this.redrawBoardGraphics();
+        }
+    }
+
+    private syncBoardGraphics() {
+        const signature = [...this.tiles, ...this.departingTiles]
+            .filter((tile) => tile.node.isValid)
+            .map((tile) => {
+                const pos = tile.node.position;
+                const scale = tile.node.scale;
+                const opacity = tile.node.getComponent(UIOpacity)?.opacity ?? 255;
+                return `${tile.id}:${pos.x.toFixed(1)}:${pos.y.toFixed(1)}:${scale.x.toFixed(2)}:${scale.y.toFixed(2)}:${opacity}:${tile.highlighted ? 1 : 0}`;
+            })
+            .join('|');
+        if (signature === this.boardVisualSignature) {
+            return;
+        }
+        this.boardVisualSignature = signature;
+        this.redrawBoardGraphics();
+    }
+
+    private redrawBoardGraphics() {
+        const graphics = this.boardGraphics;
+        if (!graphics) {
+            return;
+        }
+        graphics.clear();
+        for (const tile of this.tiles) {
+            this.drawTileToGraphics(graphics, tile);
+        }
+        for (const tile of this.departingTiles) {
+            this.drawTileToGraphics(graphics, tile);
+        }
+    }
+
+    private drawTileToGraphics(graphics: Graphics, tile: TileData) {
+        if (!tile.node.isValid || !tile.node.activeInHierarchy) {
+            return;
+        }
+        const pos = tile.node.position;
+        const scale = tile.node.scale;
+        const opacity = (tile.node.getComponent(UIOpacity)?.opacity ?? 255) / 255;
+        const w = this.tileW * scale.x;
+        const h = this.tileH * scale.y;
+        const bodyW = (this.tileW - 4) * scale.x;
+        const bodyH = (this.tileH - 8) * scale.y;
+        const bodyY = pos.y + Math.max(2, this.tileH * 0.03) * scale.y;
+        const accent = DuiDuiMahjongTheme.accentColor(tile.type);
+        const face = tile.highlighted ? color(255, 246, 166, Math.round(255 * opacity)) : color(255, 255, 247, Math.round(255 * opacity));
+        const border = tile.highlighted ? color(231, 76, 70, Math.round(255 * opacity)) : color(78, 139, 111, Math.round(255 * opacity));
+
+        graphics.fillColor = color(151, 107, 66, Math.round(92 * opacity));
+        graphics.roundRect(pos.x - w / 2, pos.y - h / 2, w, h, 10 * Math.min(scale.x, scale.y));
+        graphics.fill();
+        graphics.fillColor = face;
+        graphics.roundRect(pos.x - bodyW / 2, bodyY - bodyH / 2, bodyW, bodyH, 10 * Math.min(scale.x, scale.y));
+        graphics.fill();
+        graphics.lineWidth = (tile.highlighted ? 5 : 3) * Math.min(scale.x, scale.y);
+        graphics.strokeColor = border;
+        graphics.roundRect(pos.x - bodyW / 2, bodyY - bodyH / 2, bodyW, bodyH, 10 * Math.min(scale.x, scale.y));
+        graphics.stroke();
+
+        graphics.fillColor = color(255, 255, 255, Math.round(180 * opacity));
+        graphics.roundRect(pos.x - w / 2 + 11 * scale.x, bodyY + h / 2 - 28 * scale.y, w - 22 * scale.x, 12 * scale.y, 6 * Math.min(scale.x, scale.y));
+        graphics.fill();
+        graphics.fillColor = color(accent.r, accent.g, accent.b, Math.round(accent.a * opacity));
+        graphics.circle(pos.x - w / 2 + 18 * scale.x, bodyY + h / 2 - 22 * scale.y, Math.max(4, this.tileW * 0.065) * Math.min(scale.x, scale.y));
+        graphics.fill();
+        graphics.fillColor = color(accent.r, accent.g, accent.b, Math.round(150 * opacity));
+        graphics.circle(pos.x + w / 2 - 18 * scale.x, bodyY - h / 2 + 18 * scale.y, Math.max(3, this.tileW * 0.052) * Math.min(scale.x, scale.y));
+        graphics.fill();
+        if (tile.highlighted) {
+            graphics.lineWidth = 2 * Math.min(scale.x, scale.y);
+            graphics.strokeColor = color(255, 255, 255, Math.round(210 * opacity));
+            graphics.roundRect(pos.x - w / 2 + 9 * scale.x, bodyY - h / 2 + 11 * scale.y, w - 18 * scale.x, h - 22 * scale.y, 8 * Math.min(scale.x, scale.y));
+            graphics.stroke();
         }
     }
 
@@ -987,7 +1154,7 @@ export class DuiDuiMahjongGame extends Component {
             const opacity = hint.addComponent(UIOpacity);
             opacity.opacity = 0;
             hint.setScale(0.72, 0.72, 1);
-            drawRoundRect(hint, this.tileW + 18, this.tileH + 18, color(255, 236, 94, 62), color(255, 248, 128), 4, 8);
+            this.addEffectRoundRect(hint, this.tileW + 18, this.tileH + 18, color(255, 236, 94, 62), color(255, 248, 128), 4, 8);
             tween(hint)
                 .delay(index * 0.035)
                 .to(0.12, { scale: new Vec3(1.12, 1.12, 1) })
@@ -1091,7 +1258,7 @@ export class DuiDuiMahjongGame extends Component {
             ghost.setScale(0.62, 0.62, 1);
             const opacity = ghost.addComponent(UIOpacity);
             opacity.opacity = 0;
-            drawRoundRect(ghost, this.tileW + 14, this.tileH + 14, color(255, 222, 84, 80), color(255, 242, 104), 4, 8);
+            this.addEffectRoundRect(ghost, this.tileW + 14, this.tileH + 14, color(255, 222, 84, 80), color(255, 242, 104), 4, 8);
             tween(ghost)
                 .delay(index * 0.04)
                 .to(0.12, { scale: new Vec3(1.12, 1.12, 1) })
@@ -1175,11 +1342,13 @@ export class DuiDuiMahjongGame extends Component {
         this.playFloatingScore(mid);
         this.playRemoveEffect(first);
         this.playRemoveEffect(second);
-        this.popTile(first.node, firstPos, 0);
-        this.popTile(second.node, secondPos, 0.03);
+        this.departingTiles.push(first, second);
+        this.popTile(first, firstPos, 0);
+        this.popTile(second, secondPos, 0.03);
     }
 
-    private popTile(node: Node, origin: Vec3, delay: number) {
+    private popTile(tile: TileData, origin: Vec3, delay: number) {
+        const node = tile.node;
         Tween.stopAllByTarget(node);
         node.setSiblingIndex(9999);
         const opacity = node.getComponent(UIOpacity) || node.addComponent(UIOpacity);
@@ -1193,7 +1362,11 @@ export class DuiDuiMahjongGame extends Component {
             .to(0.05, { scale: new Vec3(1.18, 1.18, 1), position: punch })
             .to(0.06, { scale: new Vec3(0.92, 0.92, 1), position: start })
             .to(0.12, { scale: new Vec3(0.08, 0.08, 1), position: floatAway, angle: node.angle + randomRange(-24, 24) })
-            .call(() => node.destroy())
+            .call(() => {
+                this.departingTiles = this.departingTiles.filter((item) => item !== tile);
+                node.destroy();
+                this.boardVisualSignature = '';
+            })
             .start();
         tween(opacity)
             .delay(delay + 0.08)
@@ -1220,13 +1393,8 @@ export class DuiDuiMahjongGame extends Component {
         }
 
         const flash = makeNode('PopFlash', this.effectLayer, pos.x, pos.y, 92, 92);
-        const g = flash.addComponent(Graphics);
-        g.fillColor = color(255, 255, 255, 210);
-        g.circle(0, 0, 30);
-        g.fill();
-        g.fillColor = color(255, 224, 76, 180);
-        g.circle(0, 0, 18);
-        g.fill();
+        this.addEffectCircle(flash, 30, color(255, 255, 255, 210));
+        this.addEffectCircle(flash, 18, color(255, 224, 76, 180));
 
         const opacity = flash.addComponent(UIOpacity);
         flash.setScale(0.35, 0.35, 1);
@@ -1247,15 +1415,8 @@ export class DuiDuiMahjongGame extends Component {
         }
 
         const ring = makeNode('BurstRing', this.effectLayer, pos.x, pos.y, 150, 150);
-        const g = ring.addComponent(Graphics);
-        g.strokeColor = color(255, 244, 118, 235);
-        g.lineWidth = 7;
-        g.circle(0, 0, 24);
-        g.stroke();
-        g.strokeColor = color(255, 255, 255, 190);
-        g.lineWidth = 3;
-        g.circle(0, 0, 38);
-        g.stroke();
+        this.addEffectCircle(ring, 24, undefined, color(255, 244, 118, 235), 7);
+        this.addEffectCircle(ring, 38, undefined, color(255, 255, 255, 190), 3);
 
         const opacity = ring.addComponent(UIOpacity);
         ring.setScale(0.28, 0.28, 1);
@@ -1293,28 +1454,116 @@ export class DuiDuiMahjongGame extends Component {
     }
 
     private playRemoveEffect(tile: TileData) {
-        if (!this.effectLayer) {
+        if (!this.effectGraphics) {
             return;
         }
 
         const pos = this.cellToPosition(tile.row, tile.col);
         for (let i = 0; i < 12; i++) {
             const size = i % 2 === 0 ? 24 : 16;
-            const chip = makeNode(`Chip_${tile.id}_${i}`, this.effectLayer, pos.x, pos.y, size, size);
             const accent = DuiDuiMahjongTheme.accentColor(tile.type + i);
-            drawRoundRect(chip, size, size, accent, color(255, 255, 255, 180), 2, 6);
-            const opacity = chip.addComponent(UIOpacity);
-            const tx = pos.x + randomRange(-128, 128);
-            const ty = pos.y + randomRange(-128, 128);
-            tween(chip)
-                .to(0.32 + i * 0.012, { position: new Vec3(tx, ty, 0), scale: new Vec3(0.08, 0.08, 1), angle: randomRange(-260, 260) })
-                .call(() => chip.destroy())
-                .start();
-            tween(opacity)
-                .delay(0.12)
-                .to(0.22, { opacity: 0 })
-                .start();
+            this.effectChips.push({
+                x: pos.x,
+                y: pos.y,
+                targetX: pos.x + randomRange(-128, 128),
+                targetY: pos.y + randomRange(-128, 128),
+                size,
+                age: 0,
+                duration: 0.32 + i * 0.012,
+                color: accent,
+            });
         }
+    }
+
+    private updateEffectChips(dt: number) {
+        const graphics = this.effectGraphics;
+        if (!graphics) {
+            return;
+        }
+        graphics.clear();
+        this.effectShapes = this.effectShapes.filter((shape) => shape.node.isValid);
+        for (const shape of this.effectShapes) {
+            this.drawEffectShape(graphics, shape);
+        }
+
+        for (const chip of this.effectChips) {
+            chip.age += dt;
+            const progress = clamp(chip.age / chip.duration, 0, 1);
+            const eased = 1 - Math.pow(1 - progress, 2);
+            const x = chip.x + (chip.targetX - chip.x) * eased;
+            const y = chip.y + (chip.targetY - chip.y) * eased;
+            const scale = 1 - progress * 0.92;
+            const size = chip.size * scale;
+            const alpha = progress < 0.36 ? 255 : Math.round(255 * (1 - progress) / 0.64);
+            graphics.fillColor = color(chip.color.r, chip.color.g, chip.color.b, alpha);
+            graphics.roundRect(x - size / 2, y - size / 2, size, size, Math.min(6, size / 3));
+            graphics.fill();
+            graphics.lineWidth = Math.max(1, 2 * scale);
+            graphics.strokeColor = color(255, 255, 255, Math.round(180 * alpha / 255));
+            graphics.roundRect(x - size / 2, y - size / 2, size, size, Math.min(6, size / 3));
+            graphics.stroke();
+        }
+        this.effectChips = this.effectChips.filter((chip) => chip.age < chip.duration);
+    }
+
+    private addEffectRoundRect(node: Node, width: number, height: number, fill: Color, stroke?: Color, lineWidth = 0, radius = 8) {
+        this.effectShapes.push({ node, kind: 'roundRect', width, height, radius, fill, stroke, lineWidth });
+    }
+
+    private addEffectCircle(node: Node, radius: number, fill?: Color, stroke?: Color, lineWidth = 0) {
+        this.effectShapes.push({ node, kind: 'circle', width: radius * 2, height: radius * 2, radius, fill, stroke, lineWidth });
+    }
+
+    private drawEffectShape(graphics: Graphics, shape: EffectShape) {
+        if (!shape.node.activeInHierarchy) {
+            return;
+        }
+        const transform = graphics.node.getComponent(UITransform);
+        if (!transform) {
+            return;
+        }
+        const position = transform.convertToNodeSpaceAR(shape.node.worldPosition);
+        const graphicsScale = graphics.node.worldScale;
+        const nodeScale = shape.node.worldScale;
+        const scaleX = graphicsScale.x !== 0 ? nodeScale.x / graphicsScale.x : nodeScale.x;
+        const scaleY = graphicsScale.y !== 0 ? nodeScale.y / graphicsScale.y : nodeScale.y;
+        const opacity = this.getEffectShapeOpacity(shape.node);
+        const width = shape.width * scaleX;
+        const height = shape.height * scaleY;
+        const radius = shape.radius * Math.min(scaleX, scaleY);
+
+        if (shape.fill && shape.fill.a > 0) {
+            graphics.fillColor = color(shape.fill.r, shape.fill.g, shape.fill.b, Math.round(shape.fill.a * opacity));
+            if (shape.kind === 'circle') {
+                graphics.circle(position.x, position.y, radius);
+            } else {
+                graphics.roundRect(position.x - width / 2, position.y - height / 2, width, height, radius);
+            }
+            graphics.fill();
+        }
+        if (shape.stroke && shape.lineWidth > 0) {
+            graphics.lineWidth = shape.lineWidth * Math.min(scaleX, scaleY);
+            graphics.strokeColor = color(shape.stroke.r, shape.stroke.g, shape.stroke.b, Math.round(shape.stroke.a * opacity));
+            if (shape.kind === 'circle') {
+                graphics.circle(position.x, position.y, radius);
+            } else {
+                graphics.roundRect(position.x - width / 2, position.y - height / 2, width, height, radius);
+            }
+            graphics.stroke();
+        }
+    }
+
+    private getEffectShapeOpacity(node: Node): number {
+        let opacity = 1;
+        let current: Node | null = node;
+        while (current && current !== this.boardPanel) {
+            const uiOpacity = current.getComponent(UIOpacity);
+            if (uiOpacity) {
+                opacity *= uiOpacity.opacity / 255;
+            }
+            current = current.parent;
+        }
+        return opacity;
     }
 
     private completeLevel() {
@@ -1736,6 +1985,7 @@ export class DuiDuiMahjongGame extends Component {
                 row: saved.row,
                 col: saved.col,
                 node,
+                highlighted: false,
             };
             const pos = this.cellToPosition(tile.row, tile.col);
             node.setPosition(animate ? new Vec3(pos.x, pos.y + 18, 0) : pos);
@@ -1784,14 +2034,14 @@ export class DuiDuiMahjongGame extends Component {
         this.refreshHud();
     }
 
-    private ensureDirectPair() {
+    private ensureDirectPair(redraw = true) {
         const changed = this.boardModel.ensureDirectPair(this.level, this.grid, this.tiles);
         if (!changed) {
             return;
         }
 
         for (const tile of this.tiles) {
-            this.drawTile(tile, false);
+            this.drawTile(tile, false, redraw);
             this.animateTileToCell(tile);
         }
     }
@@ -1825,7 +2075,7 @@ export class DuiDuiMahjongGame extends Component {
             return;
         }
 
-        this.showUsePropPrompt('没有可消除走法，使用洗牌道具');
+        //this.showUsePropPrompt('没有可消除走法，使用洗牌道具');
     }
 
     private showUsePropPrompt(text = '使用洗牌道具试试') {
@@ -1874,7 +2124,7 @@ export class DuiDuiMahjongGame extends Component {
             const pulse = makeNode(`HintPulse_${tile.id}`, this.effectLayer, pos.x, pos.y, this.tileW + 18, this.tileH + 18);
             const opacity = pulse.addComponent(UIOpacity);
             opacity.opacity = 0;
-            drawRoundRect(pulse, this.tileW + 18, this.tileH + 18, color(255, 230, 86, 76), color(255, 248, 125), 4, 8);
+            this.addEffectRoundRect(pulse, this.tileW + 18, this.tileH + 18, color(255, 230, 86, 76), color(255, 248, 125), 4, 8);
             pulse.setScale(0.7, 0.7, 1);
             tween(pulse)
                 .delay(index * 0.05)
@@ -1904,9 +2154,9 @@ export class DuiDuiMahjongGame extends Component {
         const opacity = hint.addComponent(UIOpacity);
         opacity.opacity = 0;
 
-        drawRoundRect(hint, this.tileW + 18, this.tileH + 18, color(255, 230, 86, 72), color(255, 248, 125), 4, 8);
+        this.addEffectRoundRect(hint, this.tileW + 18, this.tileH + 18, color(255, 230, 86, 72), color(255, 248, 125), 4, 8);
         const badge = makeNode(`HintMoveBadge_${tile.id}`, hint, vector.x * (this.tileW * 0.62), vector.y * (this.tileH * 0.62), 108, 46);
-        drawRoundRect(badge, 108, 46, color(255, 114, 86, 238), color(255, 255, 255, 170), 3, 18);
+        this.addEffectRoundRect(badge, 108, 46, color(255, 114, 86, 238), color(255, 255, 255, 170), 3, 18);
         addLabel(badge, directionLabel(dir), 22, color(255, 255, 255), 0, 0, 94, 38, true);
 
         hint.setScale(0.74, 0.74, 1);
@@ -1965,10 +2215,24 @@ export class DuiDuiMahjongGame extends Component {
             this.levelLabel.string = this.mode === 0 ? '新手教学' : `第 ${this.levelByMode[this.mode] + 1} 关`;
         }
         if (this.timeLabel) {
-            this.timeLabel.string = this.level.time > 0 ? `${Math.ceil(this.timeLeft)}秒` : '不限时';
+            const displayedSecond = this.level.time > 0 ? Math.ceil(this.timeLeft) : -1;
+            if (displayedSecond !== this.lastDisplayedSecond) {
+                this.lastDisplayedSecond = displayedSecond;
+                this.timeLabel.string = displayedSecond >= 0 ? `${displayedSecond}秒` : '不限时';
+            }
         }
         if (this.remainLabel) {
             this.remainLabel.string = `剩 ${this.tiles.length}`;
+        }
+    }
+
+    private stopToast() {
+        if (this.toastTween) {
+            this.toastTween.stop();
+            this.toastTween = null;
+        }
+        if(this.toastNode.active){
+            this.toastNode.active = false;
         }
     }
 
@@ -1977,21 +2241,33 @@ export class DuiDuiMahjongGame extends Component {
             return;
         }
 
+        // 1. 停止之前的动画
+        if (this.toastTween) {
+            this.toastTween.stop();
+            this.toastTween = null;
+        }
+
+        // 2. 确保 UIOpacity 存在
+        let opacity = this.toastNode.getComponent(UIOpacity);
+        if (!opacity) {
+            opacity = this.toastNode.addComponent(UIOpacity);
+        }
+
+        // 3. 更新文本并显示节点
         this.toastLabel.string = text;
         this.toastNode.active = true;
-        const opacity = this.toastNode.getComponent(UIOpacity);
-        if (!opacity) {
-            return;
-        }
-        tween(opacity)
-            .set({ opacity: 0 })
+        opacity.opacity = 0; // 直接设置初始值，避免 set 方法
+
+        // 4. 创建动画
+        this.toastTween = tween(opacity)
             .to(0.12, { opacity: 255 })
             .delay(1.2)
             .to(0.18, { opacity: 0 })
             .call(() => {
-                if (this.toastNode) {
+                if (this.toastNode && this.toastNode.isValid) {
                     this.toastNode.active = false;
                 }
+                this.toastTween = null; // 清空引用
             })
             .start();
     }
@@ -2064,11 +2340,20 @@ export class DuiDuiMahjongGame extends Component {
             this.gameRoot = null;
         }
         this.boardPanel = null;
+        this.gameUIGraphics = null;
+        this.boardGraphics = null;
         this.boardLayer = null;
         this.effectLayer = null;
+        this.effectGraphics = null;
         this.choiceLayer = null;
         this.modalLayer = null;
         this.tiles = [];
+        this.departingTiles = [];
+        this.effectChips = [];
+        this.effectShapes = [];
+        this.boardVisualSignature = '';
+        this.controlButtonVisuals = [];
+        this.lastDisplayedSecond = null;
         this.grid = [];
         this.activeTile = null;
         this.selectedTile = null;
@@ -2154,6 +2439,18 @@ function drawRoundRect(node: Node, w: number, h: number, fill: Color, stroke?: C
     }
 }
 
+function drawSharedRoundRect(graphics: Graphics, x: number, y: number, w: number, h: number, fill: Color, stroke?: Color, lineWidth = 0, radius = 8) {
+    graphics.fillColor = fill;
+    graphics.roundRect(x - w / 2, y - h / 2, w, h, radius);
+    graphics.fill();
+    if (stroke && lineWidth > 0) {
+        graphics.lineWidth = lineWidth;
+        graphics.strokeColor = stroke;
+        graphics.roundRect(x - w / 2 + lineWidth / 2, y - h / 2 + lineWidth / 2, w - lineWidth, h - lineWidth, radius);
+        graphics.stroke();
+    }
+}
+
 function addLabel(parent: Node, text: string, fontSize: number, textColor: Color, x: number, y: number, w: number, h: number, outline = false): Label {
     const node = makeNode(`${parent.name}_Label`, parent, x, y, w, h);
     const label = node.addComponent(Label);
@@ -2165,6 +2462,7 @@ function addLabel(parent: Node, text: string, fontSize: number, textColor: Color
     label.verticalAlign = Label.VerticalAlign.CENTER;
     label.overflow = Label.Overflow.SHRINK;
     label.enableWrapText = false;
+    label.cacheMode = Label.CacheMode.CHAR;
     if (outline) {
         const labelOutline = node.addComponent(LabelOutline);
         labelOutline.color = color(73, 43, 26, 150);
